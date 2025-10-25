@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { MapPin, ChevronDown, Calendar, List, Info, Search, Filter, Download, Eye, Edit, Trash2, CheckCircle, XCircle, Clock, Users, UserCheck, UserX } from 'lucide-react';
 import Chart from 'react-apexcharts';
 import apiClient from '../../services/api';
@@ -12,12 +12,12 @@ const SegmentedGauge = ({ percentage, label = "Present", absentDays = 0 }) => {
     
     if (segmentIndex === 0) {
       // First segment: Green for present percentage
-      if (percentage >= segmentThreshold) {
+    if (percentage >= segmentThreshold) {
         return '#10b981'; // Fully green
       } else if (percentage > 0) {
         return '#10b981'; // Partially green
-      }
-      return '#f3f4f6'; // Gray (unfilled)
+    }
+    return '#f3f4f6'; // Gray (unfilled)
     } else {
       // Second segment: Red for absent percentage - only show if there are actual absent days
       const absentPercentage = 100 - percentage;
@@ -171,14 +171,25 @@ const AttendanceContent = () => {
   const [loadingGPs, setLoadingGPs] = useState(false);
   
   // Attendance specific state
-  const [activeFilter, setActiveFilter] = useState('All');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [activePerformance, setActivePerformance] = useState('Time');
+    const [activeFilter, setActiveFilter] = useState('All');
+    const [searchTerm, setSearchTerm] = useState('');
+    const [activePerformance, setActivePerformance] = useState('Time');
 
   // Analytics data state
   const [analyticsData, setAnalyticsData] = useState(null);
   const [loadingAnalytics, setLoadingAnalytics] = useState(false);
   const [analyticsError, setAnalyticsError] = useState(null);
+
+  // Top 3 section state
+  const [top3Scope, setTop3Scope] = useState('District');
+  const [top3Data, setTop3Data] = useState([]);
+  const [loadingTop3, setLoadingTop3] = useState(false);
+  const [top3Error, setTop3Error] = useState(null);
+  const [showTop3Dropdown, setShowTop3Dropdown] = useState(false);
+
+  // Refs to prevent duplicate API calls
+  const analyticsCallInProgress = useRef(false);
+  const top3CallInProgress = useRef(false);
 
   // Date selection state
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -199,9 +210,10 @@ const AttendanceContent = () => {
   });
   const [isCustomRange, setIsCustomRange] = useState(false);
   
-  const scopeButtons = ['State', 'Districts', 'Blocks', 'GPs'];
-  const performanceButtons = ['Time', 'Location'];
-  const filterButtons = ['All', 'Present', 'Absent', 'Leave', 'Holiday'];
+    const scopeButtons = ['State', 'Districts', 'Blocks', 'GPs'];
+    const performanceButtons = ['Time', 'Location'];
+    const filterButtons = ['All', 'Present', 'Absent', 'Leave', 'Holiday'];
+  const top3ScopeOptions = ['District', 'Block', 'GP'];
 
   // Predefined date ranges
   const dateRanges = [
@@ -305,7 +317,7 @@ const AttendanceContent = () => {
   };
 
   // Handle scope change
-  const handleScopeChange = (scope) => {
+  const handleScopeChange = async (scope) => {
     console.log('Scope changed to:', scope);
     trackTabChange(scope);
     setActiveScope(scope);
@@ -319,8 +331,17 @@ const AttendanceContent = () => {
       setSelectedDistrictForHierarchy(null);
       setSelectedBlockForHierarchy(null);
     } else if (scope === 'Districts') {
-      // Set first district as selected (districts are already loaded)
-      if (districts.length > 0) {
+      // Ensure districts are loaded first, then set first district as selected
+      if (districts.length === 0) {
+        console.log('⏳ Loading districts first...');
+        await fetchDistricts();
+        // Wait for districts to be loaded, then set first district
+        setTimeout(() => {
+          if (districts.length > 0) {
+            updateLocationSelection('Districts', districts[0].name, districts[0].id, districts[0].id, null, null, 'tab_change');
+          }
+        }, 100);
+      } else {
         updateLocationSelection('Districts', districts[0].name, districts[0].id, districts[0].id, null, null, 'tab_change');
       }
       // Fetch blocks for attendance chart
@@ -329,7 +350,12 @@ const AttendanceContent = () => {
       setSelectedDistrictForHierarchy(null);
       setSelectedBlockForHierarchy(null);
     } else if (scope === 'Blocks') {
-      // For blocks, start with districts level
+      // For blocks, ensure districts are loaded first
+      if (districts.length === 0) {
+        console.log('⏳ Loading districts first...');
+        await fetchDistricts();
+      }
+      // Then fetch blocks and GPs
       fetchBlocks();
       fetchGramPanchayats();
       updateLocationSelection('Blocks', 'Select District', null, null, null, null, 'tab_change');
@@ -337,7 +363,12 @@ const AttendanceContent = () => {
       setSelectedDistrictForHierarchy(null);
       setSelectedBlockForHierarchy(null);
     } else if (scope === 'GPs') {
-      // For GPs, start with districts level
+      // For GPs, ensure districts are loaded first
+      if (districts.length === 0) {
+        console.log('⏳ Loading districts first...');
+        await fetchDistricts();
+      }
+      // Then fetch blocks and GPs
       fetchBlocks();
       fetchGramPanchayats();
       updateLocationSelection('GPs', 'Select District', null, null, null, null, 'tab_change');
@@ -417,7 +448,14 @@ const AttendanceContent = () => {
 
   // Fetch attendance analytics data from API
   const fetchAnalyticsData = useCallback(async () => {
+    // Prevent duplicate calls
+    if (analyticsCallInProgress.current) {
+      console.log('⏸️ Analytics API call already in progress, skipping...');
+      return;
+    }
+    
     try {
+      analyticsCallInProgress.current = true;
       setLoadingAnalytics(true);
       setAnalyticsError(null);
 
@@ -534,8 +572,151 @@ const AttendanceContent = () => {
       setAnalyticsData(null);
     } finally {
       setLoadingAnalytics(false);
+      analyticsCallInProgress.current = false;
     }
   }, [activeScope, selectedLocation, selectedDistrictId, selectedBlockId, selectedGPId, startDate, endDate]);
+
+  // Fetch Top 3 data from API
+  const fetchTop3Data = useCallback(async () => {
+    // Prevent duplicate calls
+    if (top3CallInProgress.current) {
+      console.log('⏸️ Top 3 API call already in progress, skipping...');
+      return;
+    }
+    
+    try {
+      top3CallInProgress.current = true;
+      setLoadingTop3(true);
+      setTop3Error(null);
+
+      // Calculate current month's date range for monthly score
+      const currentDate = new Date();
+      const year = currentDate.getFullYear();
+      const month = currentDate.getMonth();
+      
+      // First day of current month
+      const firstDayOfMonth = new Date(year, month, 1);
+      // Last day of current month
+      const lastDayOfMonth = new Date(year, month + 1, 0);
+      
+      const monthStartDate = firstDayOfMonth.toISOString().split('T')[0];
+      const monthEndDate = lastDayOfMonth.toISOString().split('T')[0];
+
+      console.log('🔄 ===== TOP 3 API CALL =====');
+      console.log('📍 Top 3 Scope:', top3Scope);
+      console.log('📅 Monthly Date Range:', { monthStartDate, monthEndDate });
+
+      // Build query parameters based on selected scope
+      const params = new URLSearchParams();
+
+      // Determine level based on top3Scope
+      let level = 'DISTRICT'; // Default
+      if (top3Scope === 'Block') {
+        level = 'BLOCK';
+      } else if (top3Scope === 'GP') {
+        level = 'VILLAGE';
+      }
+      params.append('level', level);
+      console.log('📊 Top 3 Level:', level);
+
+      // Add current month's date range for monthly score calculation
+      params.append('start_date', monthStartDate);
+      params.append('end_date', monthEndDate);
+      console.log('📅 Monthly Start Date:', monthStartDate);
+      console.log('📅 Monthly End Date:', monthEndDate);
+
+      // Add limit
+      params.append('limit', '500');
+
+      const url = `/attendance/analytics?${params.toString()}`;
+      console.log('🌐 Top 3 API URL:', url);
+      
+      const response = await apiClient.get(url);
+      
+      console.log('✅ Top 3 API Response:', {
+        status: response.status,
+        data: response.data
+      });
+      
+      // Process and rank the data
+      const processedData = processTop3Data(response.data);
+      setTop3Data(processedData);
+      
+      console.log('📈 Top 3 Processed Data:', processedData);
+      console.log('🔄 ===== END TOP 3 API CALL =====\n');
+      
+    } catch (error) {
+      console.error('❌ ===== TOP 3 API ERROR =====');
+      console.error('Error Type:', error.name);
+      console.error('Error Message:', error.message);
+      console.error('Error Details:', error.response?.data || error);
+      console.error('🔄 ===== END TOP 3 API ERROR =====\n');
+      
+      setTop3Error(error.message || 'Failed to fetch top 3 data');
+      setTop3Data([]);
+    } finally {
+      setLoadingTop3(false);
+      top3CallInProgress.current = false;
+    }
+  }, [top3Scope, startDate, endDate]);
+
+  // Process and rank Top 3 data
+  const processTop3Data = (apiData) => {
+    if (!apiData?.response) {
+      return [];
+    }
+
+    // Calculate monthly score for each item using current month's date range
+    const processedItems = apiData.response.map(item => {
+      // Use current month's date range for monthly score calculation
+      const currentDate = new Date();
+      const year = currentDate.getFullYear();
+      const month = currentDate.getMonth();
+      
+      // First day of current month
+      const firstDayOfMonth = new Date(year, month, 1);
+      // Last day of current month
+      const lastDayOfMonth = new Date(year, month + 1, 0);
+      
+      const monthStartDate = firstDayOfMonth.toISOString().split('T')[0];
+      const monthEndDate = lastDayOfMonth.toISOString().split('T')[0];
+      
+      const totalWorkingDays = calculateWorkingDaysForRange(monthStartDate, monthEndDate);
+      const monthlyScore = totalWorkingDays > 0 
+        ? Math.round((item.present_count / totalWorkingDays) * 100)
+        : 0;
+
+      console.log('📅 Monthly Score Calculation for Top 3:', {
+        itemName: item.geography_name,
+        monthStartDate,
+        monthEndDate,
+        totalWorkingDays,
+        presentCount: item.present_count,
+        monthlyScore
+      });
+
+      return {
+        id: item.geography_id,
+        name: item.geography_name,
+        monthlyScore: Math.min(monthlyScore, 100), // Cap at 100%
+        presentCount: item.present_count,
+        absentCount: item.absent_count,
+        totalContractors: item.total_contractors,
+        attendanceRate: item.attendance_rate
+      };
+    });
+
+    // Sort by monthly score (highest first) and take top 3
+    const sortedItems = processedItems
+      .sort((a, b) => b.monthlyScore - a.monthlyScore)
+      .slice(0, 3);
+
+    // Add rank numbers
+    return sortedItems.map((item, index) => ({
+      ...item,
+      rank: index + 1
+    }));
+  };
 
   // Date range functions
   const generateYears = () => {
@@ -697,9 +878,13 @@ const AttendanceContent = () => {
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (!event.target.closest('[data-location-dropdown]') && 
-          !event.target.closest('[data-date-dropdown]')) {
+          !event.target.closest('[data-date-dropdown]') &&
+          !event.target.closest('[data-top3-dropdown]') &&
+          !event.target.closest('[data-history-date-dropdown]')) {
         setShowLocationDropdown(false);
         setShowDateDropdown(false);
+        setShowTop3Dropdown(false);
+        setShowHistoryDateDropdown(false);
       }
     };
 
@@ -746,23 +931,52 @@ const AttendanceContent = () => {
       return;
     }
     
-    // For other scopes, check if we have the necessary location data loaded
-    if (activeScope === 'Districts' && !selectedDistrictId) {
-      console.log('⏳ Waiting for district selection');
-      return; // Wait for district selection
+    // For other scopes, ensure districts are loaded first
+    if (activeScope === 'Districts') {
+      if (districts.length === 0) {
+        console.log('⏳ Waiting for districts to load first');
+        return;
+      }
+      if (!selectedDistrictId) {
+        console.log('⏳ Waiting for district selection');
+        return;
+      }
     }
-    if (activeScope === 'Blocks' && !selectedBlockId) {
-      console.log('⏳ Waiting for block selection');
-      return; // Wait for block selection
+    
+    if (activeScope === 'Blocks') {
+      if (districts.length === 0) {
+        console.log('⏳ Waiting for districts to load first');
+        return;
+      }
+      if (!selectedBlockId) {
+        console.log('⏳ Waiting for block selection');
+        return;
+      }
     }
-    if (activeScope === 'GPs' && !selectedGPId) {
-      console.log('⏳ Waiting for GP selection');
-      return; // Wait for GP selection
+    
+    if (activeScope === 'GPs') {
+      if (districts.length === 0) {
+        console.log('⏳ Waiting for districts to load first');
+        return;
+      }
+      if (!selectedGPId) {
+        console.log('⏳ Waiting for GP selection');
+        return;
+      }
     }
     
     console.log('📡 Calling API for other scopes');
     fetchAnalyticsData();
-  }, [activeScope, selectedLocation, selectedDistrictId, selectedBlockId, selectedGPId, startDate, endDate, districts, blocks, gramPanchayats, fetchAnalyticsData]);
+  }, [activeScope, selectedDistrictId, selectedBlockId, selectedGPId, startDate, endDate, districts.length]);
+
+  // Fetch Top 3 data when scope changes (uses current month, not selected date range)
+  useEffect(() => {
+    console.log('🔄 Top 3 useEffect triggered:', {
+      top3Scope
+    });
+    
+    fetchTop3Data();
+  }, [top3Scope]);
 
   // Helper function to calculate attendance metrics from API data
   const calculateAttendanceMetrics = () => {
@@ -894,6 +1108,451 @@ const AttendanceContent = () => {
     };
   };
 
+  // State for chart data
+  const [chartData, setChartData] = useState([]);
+  const [loadingChartData, setLoadingChartData] = useState(false);
+  const [chartError, setChartError] = useState(null);
+  const [averageAttendanceRate, setAverageAttendanceRate] = useState(65); // Default to 65%
+
+  // State for Attendance History date selector
+  const [historyDateRange, setHistoryDateRange] = useState('Today');
+  const [historyStartDate, setHistoryStartDate] = useState(() => {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  });
+  const [historyEndDate, setHistoryEndDate] = useState(() => {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  });
+  const [isHistoryCustomRange, setIsHistoryCustomRange] = useState(false);
+  const [showHistoryDateDropdown, setShowHistoryDateDropdown] = useState(false);
+
+  // State for Attendance History data
+  const [attendanceHistoryData, setAttendanceHistoryData] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [historyError, setHistoryError] = useState(null);
+
+  // Fetch chart data from analytics API
+  const fetchChartData = useCallback(async () => {
+    try {
+      setLoadingChartData(true);
+      setChartError(null);
+
+      console.log('🔄 Fetching chart data for:', { activePerformance });
+
+      // Get current year date range
+      const now = new Date();
+      const year = now.getFullYear();
+      
+      console.log('📅 Current Year Info:', { 
+        now: now.toISOString(), 
+        year
+      });
+      
+      // Get first and last day of current year
+      const startDate = `${year}-01-01`; // January 1st
+      const endDate = `${year}-12-31`;   // December 31st
+
+      // Build query parameters - ALWAYS use district level with current year date range
+      const params = new URLSearchParams();
+      params.append('level', 'DISTRICT');
+      params.append('start_date', startDate);
+      params.append('end_date', endDate);
+      params.append('limit', '500');
+
+      const url = `/attendance/analytics?${params.toString()}`;
+      console.log('🌐 Chart API URL:', url);
+      console.log('📅 Date Range:', { startDate, endDate });
+
+      const response = await apiClient.get(url);
+      console.log('✅ Chart API Response:', response.data);
+
+      // Process the data
+      const { chartData: processedData, averageRate } = processChartData(response.data);
+      setChartData(processedData);
+      setAverageAttendanceRate(averageRate);
+
+    } catch (error) {
+      console.error('❌ Chart API Error:', error);
+      setChartError(error.message || 'Failed to fetch chart data');
+      setChartData([]);
+    } finally {
+      setLoadingChartData(false);
+    }
+  }, [activePerformance]);
+
+  // Fetch chart data when performance tab changes
+  useEffect(() => {
+    console.log('🔄 Chart data useEffect triggered:', {
+      activePerformance
+    });
+    
+    fetchChartData();
+  }, [activePerformance, fetchChartData]);
+
+  // Fetch attendance history data from analytics API
+  const fetchAttendanceHistory = useCallback(async () => {
+    try {
+      setLoadingHistory(true);
+      setHistoryError(null);
+
+      console.log('🔄 Fetching attendance history for:', { 
+        activeScope, 
+        selectedDistrictId, 
+        selectedBlockId, 
+        selectedGPId,
+        historyStartDate,
+        historyEndDate
+      });
+
+      // Build query parameters based on current scope
+      const params = new URLSearchParams();
+      
+      // Determine level based on active scope
+      let level = 'DISTRICT';
+      if (activeScope === 'Districts') {
+        level = 'BLOCK';
+      } else if (activeScope === 'Blocks' || activeScope === 'GPs') {
+        level = 'VILLAGE';
+      }
+      params.append('level', level);
+
+      // Add geography filters based on selection
+      if (activeScope === 'Districts' && selectedDistrictId) {
+        params.append('district_id', selectedDistrictId);
+      } else if (activeScope === 'Blocks' && selectedBlockId) {
+        params.append('block_id', selectedBlockId);
+      } else if (activeScope === 'GPs' && selectedGPId) {
+        params.append('gp_id', selectedGPId);
+      }
+
+      // Add date range
+      params.append('start_date', historyStartDate);
+      params.append('end_date', historyEndDate);
+      params.append('limit', '500');
+
+      const url = `/attendance/analytics?${params.toString()}`;
+      console.log('🌐 History API URL:', url);
+
+      const response = await apiClient.get(url);
+      console.log('✅ History API Response:', response.data);
+
+      // Process the data
+      const processedData = processAttendanceHistoryData(response.data);
+      setAttendanceHistoryData(processedData);
+
+    } catch (error) {
+      console.error('❌ History API Error:', error);
+      setHistoryError(error.message || 'Failed to fetch attendance history');
+      setAttendanceHistoryData([]);
+    } finally {
+      setLoadingHistory(false);
+    }
+  }, [activeScope, selectedDistrictId, selectedBlockId, selectedGPId, historyStartDate, historyEndDate]);
+
+  // Process attendance history data from API response
+  const processAttendanceHistoryData = (apiData) => {
+    if (!apiData?.response) {
+      return [];
+    }
+
+    // Group data by geography and calculate average attendance
+    const geographyMap = new Map();
+
+    apiData.response.forEach(item => {
+      const key = item.geography_id;
+      if (!geographyMap.has(key)) {
+        geographyMap.set(key, {
+          id: item.geography_id,
+          name: item.geography_name,
+          totalContractors: 0,
+          totalPresent: 0,
+          totalAbsent: 0,
+          attendanceRates: []
+        });
+      }
+
+      const geoData = geographyMap.get(key);
+      geoData.totalContractors += item.total_contractors || 0;
+      geoData.totalPresent += item.present_count || 0;
+      geoData.totalAbsent += item.absent_count || 0;
+      geoData.attendanceRates.push(item.attendance_rate || 0);
+    });
+
+    // Calculate average attendance rate for each geography
+    const processedItems = Array.from(geographyMap.values()).map(item => {
+      const avgAttendanceRate = item.attendanceRates.length > 0 
+        ? item.attendanceRates.reduce((sum, rate) => sum + rate, 0) / item.attendanceRates.length
+        : 0;
+      
+      // Cap attendance percentage to 100% maximum
+      const attendancePercentage = Math.min(Math.round(avgAttendanceRate * 100), 100);
+      
+      return {
+        id: item.id,
+        name: item.name,
+        attendancePercentage: attendancePercentage,
+        totalContractors: item.totalContractors,
+        totalPresent: item.totalPresent,
+        totalAbsent: item.totalAbsent
+      };
+    });
+
+    // Sort by attendance percentage (highest first)
+    return processedItems.sort((a, b) => b.attendancePercentage - a.attendancePercentage);
+  };
+
+  // Fetch attendance history when scope, location, or date range changes
+  useEffect(() => {
+    console.log('🔄 Attendance history useEffect triggered:', {
+      activeScope,
+      selectedDistrictId,
+      selectedBlockId,
+      selectedGPId,
+      historyStartDate,
+      historyEndDate
+    });
+    
+    fetchAttendanceHistory();
+  }, [activeScope, selectedDistrictId, selectedBlockId, selectedGPId, historyStartDate, historyEndDate, fetchAttendanceHistory]);
+
+  // Debug history date state changes
+  useEffect(() => {
+    console.log('📅 History date state changed:', {
+      historyDateRange,
+      historyStartDate,
+      historyEndDate,
+      isHistoryCustomRange,
+      showHistoryDateDropdown
+    });
+  }, [historyDateRange, historyStartDate, historyEndDate, isHistoryCustomRange, showHistoryDateDropdown]);
+
+  // Process chart data from API response and match with x-axis entities
+  const processChartData = (apiData) => {
+    if (!apiData?.response) {
+      return { chartData: generateEmptyChartData(), averageRate: 65 };
+    }
+
+    // Calculate average attendance rate from all API data
+    const allAttendanceRates = apiData.response.map(item => item.attendance_rate || 0);
+    console.log('🔍 Raw Attendance Rates:', allAttendanceRates);
+    
+    // API data is in decimal format (0.42 = 0.42%), need to multiply by 100 to get percentage
+    const averageRate = allAttendanceRates.length > 0 
+      ? Math.round(allAttendanceRates.reduce((sum, rate) => sum + rate, 0) / allAttendanceRates.length * 100)
+      : 65;
+    
+    console.log('📊 Average Attendance Rate:', averageRate + '%');
+
+    if (activePerformance === 'Time') {
+      // Time tab - get all months of current year
+      const currentDate = new Date();
+      const year = currentDate.getFullYear();
+      
+      // Create map of API data by month
+      const monthMap = new Map();
+      apiData.response.forEach(item => {
+        const date = new Date(item.date);
+        const month = date.getMonth(); // 0-indexed (0 = January, 11 = December)
+        const monthKey = month;
+        
+        console.log('📅 API Date:', item.date, 'Month:', month + 1, 'Geography:', item.geography_name, 'Rate:', item.attendance_rate);
+        
+        if (!monthMap.has(monthKey)) {
+          monthMap.set(monthKey, []);
+        }
+        monthMap.get(monthKey).push(item);
+      });
+      
+      console.log('📊 MonthMap keys:', Array.from(monthMap.keys()));
+
+      // Generate chart data for all months of the year
+      const chartItems = [];
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      
+      for (let month = 0; month < 12; month++) {
+        const monthLabel = monthNames[month];
+        
+        console.log('🔍 Checking month:', { month: month + 1, monthLabel, hasData: monthMap.has(month) });
+        
+        // Check if we have data for this month
+        const monthData = monthMap.get(month);
+        
+        if (monthData && monthData.length > 0) {
+          // Calculate average attendance rate for this month
+          const avgAttendanceRate = monthData.reduce((sum, item) => sum + (item.attendance_rate || 0), 0) / monthData.length;
+          const attendancePercentage = Math.min(Math.round(avgAttendanceRate * 100), 100);
+          
+          chartItems.push({
+            x: monthLabel,
+            y: attendancePercentage,
+            fillColor: attendancePercentage >= averageRate ? '#10b981' : '#ef4444'
+          });
+        } else {
+          // No data for this month, show 0
+          chartItems.push({
+            x: monthLabel,
+            y: 0,
+            fillColor: '#d1d5db' // Gray for no data
+          });
+        }
+      }
+      
+      return { chartData: chartItems, averageRate };
+    } else {
+      // Location tab - ALWAYS show all districts (State Performance)
+      let entities = districts.map(d => ({ id: d.id, name: d.name }));
+      
+      // Create map of API data by geography_id
+      const geoMap = new Map();
+      apiData.response.forEach(item => {
+        const key = item.geography_id;
+        if (!geoMap.has(key)) {
+          geoMap.set(key, []);
+        }
+        geoMap.get(key).push(item);
+      });
+      
+      // Match entities with API data
+      const chartItems = entities.map(entity => {
+        const entityData = geoMap.get(entity.id);
+        
+        if (entityData && entityData.length > 0) {
+          // Calculate average attendance rate
+          const avgAttendanceRate = entityData.reduce((sum, item) => sum + (item.attendance_rate || 0), 0) / entityData.length;
+          const attendancePercentage = Math.min(Math.round(avgAttendanceRate * 100), 100);
+          
+          return {
+            x: entity.name,
+            y: attendancePercentage,
+            fillColor: attendancePercentage >= averageRate ? '#10b981' : '#ef4444'
+          };
+        } else {
+          // No data for this entity
+          return {
+            x: entity.name,
+            y: 0,
+            fillColor: '#d1d5db' // Gray for no data
+          };
+        }
+      });
+      
+      return { chartData: chartItems, averageRate };
+    }
+  };
+
+  // Generate empty chart data when no API data is available
+  const generateEmptyChartData = () => {
+    if (activePerformance === 'Time') {
+      // Time tab - show all months of the year
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      
+      const chartItems = monthNames.map(monthName => ({
+        x: monthName,
+        y: 0,
+        fillColor: '#d1d5db'
+      }));
+      
+      return { chartData: chartItems, averageRate: 65 };
+    } else {
+      // Location tab - ALWAYS show all districts (State Performance)
+      return { 
+        chartData: districts.map(district => ({
+          x: district.name,
+          y: 0,
+          fillColor: '#d1d5db'
+        })), 
+        averageRate: 65 
+      };
+    }
+  };
+
+  // Helper function to generate dynamic x-axis data based on selected tab and filters
+  const generateDynamicXAxisData = () => {
+    return chartData;
+  };
+
+  // Helper functions for history date selector
+  const getHistoryDateDisplayText = () => {
+    console.log('🔄 Getting history display text:', {
+      isHistoryCustomRange,
+      historyStartDate,
+      historyEndDate,
+      historyDateRange
+    });
+    
+    if (isHistoryCustomRange && historyStartDate && historyEndDate) {
+      const start = new Date(historyStartDate);
+      const end = new Date(historyEndDate);
+      return `${start.getDate()}/${start.getMonth() + 1}/${start.getFullYear()} - ${end.getDate()}/${end.getMonth() + 1}/${end.getFullYear()}`;
+    } else if (isHistoryCustomRange && historyStartDate) {
+      const start = new Date(historyStartDate);
+      return `${start.getDate()}/${start.getMonth() + 1}/${start.getFullYear()} - Select End Date`;
+    } else {
+      return historyDateRange;
+    }
+  };
+
+  // Handle predefined date range selection for history
+  const handleHistoryDateRangeSelection = (range) => {
+    console.log('🔄 History date range selected:', range);
+    
+    if (range.value === 'custom') {
+      setIsHistoryCustomRange(true);
+      setHistoryDateRange('Custom');
+      setHistoryStartDate(null);
+      setHistoryEndDate(null);
+    } else {
+      setIsHistoryCustomRange(false);
+      setHistoryDateRange(range.label);
+      
+      const today = new Date();
+      let startDate, endDate;
+      
+      if (range.value === 'today') {
+        startDate = today.toISOString().split('T')[0];
+        endDate = today.toISOString().split('T')[0];
+      } else if (range.value === 'yesterday') {
+        const yesterday = new Date(today);
+        yesterday.setDate(today.getDate() - 1);
+        startDate = yesterday.toISOString().split('T')[0];
+        endDate = yesterday.toISOString().split('T')[0];
+      } else {
+        const start = new Date(today);
+        start.setDate(today.getDate() - range.days);
+        startDate = start.toISOString().split('T')[0];
+        endDate = today.toISOString().split('T')[0];
+      }
+      
+      console.log('📅 Setting history dates:', {
+        startDate,
+        endDate,
+        range: range.label
+      });
+      
+      setHistoryStartDate(startDate);
+      setHistoryEndDate(endDate);
+      setShowHistoryDateDropdown(false);
+    }
+  };
+
+  // Handle custom date selection for history
+  const handleHistoryCustomDateSelection = (date) => {
+    if (!historyStartDate) {
+      setHistoryStartDate(date);
+    } else if (!historyEndDate) {
+      if (new Date(date) >= new Date(historyStartDate)) {
+        setHistoryEndDate(date);
+        setShowHistoryDateDropdown(false);
+      } else {
+        setHistoryEndDate(historyStartDate);
+        setHistoryStartDate(date);
+        setShowHistoryDateDropdown(false);
+      }
+    }
+  };
+
+
   // Get dynamic attendance metrics from API data
   const getAttendanceMetrics = () => {
     const metrics = calculateAttendanceMetrics();
@@ -984,24 +1643,24 @@ const AttendanceContent = () => {
           <div 
             data-location-dropdown
             style={{
-              position: 'relative',
-              minWidth: '200px'
+            position: 'relative',
+            minWidth: '200px'
             }}
           >
             <button 
               onClick={() => activeScope !== 'State' && setShowLocationDropdown(!showLocationDropdown)}
               disabled={activeScope === 'State'}
               style={{
-                width: '100%',
-                padding: '5px 12px',
-                border: '1px solid #d1d5db',
-                borderRadius: '10px',
+              width: '100%',
+              padding: '5px 12px',
+              border: '1px solid #d1d5db',
+              borderRadius: '10px',
                 backgroundColor: activeScope === 'State' ? '#f9fafb' : 'white',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
                 cursor: activeScope === 'State' ? 'not-allowed' : 'pointer',
-                fontSize: '14px',
+              fontSize: '14px',
                 color: activeScope === 'State' ? '#9ca3af' : '#6b7280',
                 opacity: activeScope === 'State' ? 0.6 : 1
               }}
@@ -1074,7 +1733,7 @@ const AttendanceContent = () => {
                        activeScope === 'GPs' && dropdownLevel === 'blocks' ? 'Back to Districts' :
                        activeScope === 'GPs' && dropdownLevel === 'gps' ? 'Back to Blocks' : ''}
                     </span>
-                  </div>
+          </div>
                 )}
                 
                 {/* Level indicator */}
@@ -1196,11 +1855,11 @@ const AttendanceContent = () => {
             onClick={handleCalendarClick}
             data-date-dropdown
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              color: '#6b7280',
-              fontSize: '14px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            color: '#6b7280',
+            fontSize: '14px',
               padding: '8px 12px',
               border: '1px solid #d1d5db',
               borderRadius: '8px',
@@ -1678,11 +2337,12 @@ const AttendanceContent = () => {
         }}>
         {/* Top 3 Section */}
         <div style={{
-          flex: 1,
+          flex: 0.8,
           backgroundColor: 'white',
           padding: '16px',
           borderRadius: '8px',
-          border: '1px solid lightgray'
+          border: '1px solid lightgray',
+          minHeight: '450px'
         }}>
           {/* Top 3 Header */}
           <div style={{
@@ -1699,11 +2359,16 @@ const AttendanceContent = () => {
             }}>
               Top 3
             </h2>
-            <div style={{
+            <div 
+              data-top3-dropdown
+              style={{
               position: 'relative',
               minWidth: '100px'
-            }}>
-              <button style={{
+              }}
+            >
+              <button 
+                onClick={() => setShowTop3Dropdown(!showTop3Dropdown)}
+                style={{
                 width: '100%',
                 padding: '6px 12px',
                 border: '1px solid #d1d5db',
@@ -1715,10 +2380,52 @@ const AttendanceContent = () => {
                 cursor: 'pointer',
                 fontSize: '14px',
                 color: '#6b7280'
-              }}>
-                <span>District</span>
+                }}
+              >
+                <span>{top3Scope}</span>
                 <ChevronDown style={{ width: '16px', height: '16px', color: '#9ca3af' }} />
               </button>
+              
+              {/* Top 3 Dropdown Menu */}
+              {showTop3Dropdown && (
+                <div 
+                  onClick={(e) => e.stopPropagation()}
+                  style={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: 0,
+                    right: 0,
+                    backgroundColor: 'white',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '8px',
+                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                    zIndex: 1000,
+                    marginTop: '4px',
+                    maxHeight: '200px',
+                    overflowY: 'auto'
+                  }}
+                >
+                  {top3ScopeOptions.map((option) => (
+                    <div
+                      key={option}
+                      onClick={() => {
+                        setTop3Scope(option);
+                        setShowTop3Dropdown(false);
+                      }}
+                      style={{
+                        padding: '8px 12px',
+                        cursor: 'pointer',
+                        fontSize: '14px',
+                        color: '#374151',
+                        backgroundColor: top3Scope === option ? '#f3f4f6' : 'transparent',
+                        borderBottom: '1px solid #f3f4f6'
+                      }}
+                    >
+                      {option}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
@@ -1741,7 +2448,7 @@ const AttendanceContent = () => {
                     fontWeight: '600',
                     color: '#374151'
                   }}>
-                    District
+                    {top3Scope}
                   </th>
                   <th style={{
                     padding: '12px',
@@ -1773,12 +2480,42 @@ const AttendanceContent = () => {
                 </tr>
               </thead>
               <tbody>
-                {[
-                  { district: 'District 1', score: '67%', rank: 1 },
-                  { district: 'District 2', score: '67%', rank: 2 },
-                  { district: 'District 3', score: '67%', rank: 3 }
-                ].map((item, index) => (
-                  <tr key={index} style={{
+                {loadingTop3 ? (
+                  <tr>
+                    <td colSpan="4" style={{
+                      padding: '40px',
+                      textAlign: 'center',
+                      fontSize: '14px',
+                      color: '#6b7280'
+                    }}>
+                      Loading top 3 data...
+                    </td>
+                  </tr>
+                ) : top3Error ? (
+                  <tr>
+                    <td colSpan="4" style={{
+                      padding: '40px',
+                      textAlign: 'center',
+                      fontSize: '14px',
+                      color: '#dc2626'
+                    }}>
+                      Error loading data: {top3Error}
+                    </td>
+                  </tr>
+                ) : top3Data.length === 0 ? (
+                  <tr>
+                    <td colSpan="4" style={{
+                      padding: '40px',
+                      textAlign: 'center',
+                      fontSize: '14px',
+                      color: '#6b7280'
+                    }}>
+                      No data available
+                    </td>
+                  </tr>
+                ) : (
+                  top3Data.map((item, index) => (
+                    <tr key={item.id || index} style={{
                     borderBottom: '1px solid #f3f4f6'
                   }}>
                     <td style={{
@@ -1786,14 +2523,14 @@ const AttendanceContent = () => {
                       fontSize: '14px',
                       color: '#374151'
                     }}>
-                      {item.district}
+                        {item.name}
                     </td>
                     <td style={{
                       padding: '12px',
                       fontSize: '14px',
                       color: '#374151'
                     }}>
-                      {item.score}
+                        {item.monthlyScore}%
                     </td>
                     <td style={{
                       padding: '12px',
@@ -1801,8 +2538,10 @@ const AttendanceContent = () => {
                       color: '#374151'
                     }}>
                       <div style={{
-                        backgroundColor: '#dcfce7',
-                        color: '#166534',
+                          backgroundColor: item.rank === 1 ? '#dcfce7' : 
+                                         item.rank === 2 ? '#fef3c7' : '#fce7f3',
+                          color: item.rank === 1 ? '#166534' : 
+                                item.rank === 2 ? '#92400e' : '#be185d',
                         padding: '4px 8px',
                         borderRadius: '50%',
                         fontSize: '12px',
@@ -1856,7 +2595,8 @@ const AttendanceContent = () => {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -1864,11 +2604,12 @@ const AttendanceContent = () => {
 
         {/* State Performance Score Section */}
         <div style={{
-          flex: 1,
+          flex: 1.5,
           backgroundColor: 'white',
           padding: '16px',
           borderRadius: '8px',
-          border: '1px solid lightgray'
+          border: '1px solid lightgray',
+          minHeight: '450px'
         }}>
           {/* State Performance Header */}
           <div style={{
@@ -1976,12 +2717,64 @@ const AttendanceContent = () => {
             }}></div>
             
           {/* Bar Chart */}
-          <div style={{ height: '250px' }}>
-            <Chart
+          <div style={{ height: '300px' }}>
+            {(() => {
+              const currentChartData = generateDynamicXAxisData();
+              
+              // Show loading state if data is being fetched
+              if (loadingChartData) {
+                return (
+                  <div style={{
+                    height: '300px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#6b7280',
+                    fontSize: '14px'
+                  }}>
+                    Loading chart data...
+                  </div>
+                );
+              }
+              
+              // Show error state if there's an error
+              if (chartError) {
+                return (
+                  <div style={{
+                    height: '300px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#ef4444',
+                    fontSize: '14px'
+                  }}>
+                    Error: {chartError}
+                  </div>
+                );
+              }
+              
+              // Show empty state if no data available
+              if (currentChartData.length === 0) {
+                return (
+                  <div style={{
+                    height: '300px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#6b7280',
+                    fontSize: '14px'
+                  }}>
+                    {activePerformance === 'Location' ? 'No location data available' : 'No time data available'}
+                  </div>
+                );
+              }
+              
+              return (
+                <Chart
               options={{
                 chart: {
                   type: 'bar',
-                  height: 250,
+                  height: 300,
                   toolbar: { show: false }
                 },
                 plotOptions: {
@@ -2005,10 +2798,13 @@ const AttendanceContent = () => {
                 xaxis: {
                   labels: {
                     style: {
-                      fontSize: '12px',
+                      fontSize: activePerformance === 'Time' ? '10px' : '11px',
                       colors: '#6b7280'
                     },
-                    rotate: -45
+                    rotate: activePerformance === 'Time' ? -90 : -45,
+                    maxHeight: activePerformance === 'Time' ? 60 : 50,
+                    trim: true,
+                    hideOverlappingLabels: true
                   },
                   axisBorder: { show: false },
                   axisTicks: { show: false }
@@ -2030,7 +2826,7 @@ const AttendanceContent = () => {
                 colors: ['#10b981', '#ef4444'],
                 annotations: {
                   yaxis: [{
-                    y: 65,
+                    y: averageAttendanceRate,
                     borderColor: '#6b7280',
                     borderWidth: 2,
                     borderDashArray: [5, 5],
@@ -2050,29 +2846,13 @@ const AttendanceContent = () => {
               }}
               series={[{
                 name: 'Performance Score',
-                data: [
-                  { x: 'Ajmer', y: 16, fillColor: '#ef4444' },
-                  { x: 'Ajmer', y: 15, fillColor: '#ef4444' },
-                  { x: 'Anupgarh', y: 16, fillColor: '#ef4444' },
-                  { x: 'Balotra', y: 75, fillColor: '#10b981' },
-                  { x: 'Baran', y: 75, fillColor: '#10b981' },
-                  { x: 'Barmer', y: 38, fillColor: '#ef4444' },
-                  { x: 'Beawar', y: 73, fillColor: '#10b981' },
-                  { x: 'Bharatpur', y: 43, fillColor: '#ef4444' },
-                  { x: 'Bhilwara', y: 42, fillColor: '#ef4444' },
-                  { x: 'Bikaner', y: 75, fillColor: '#10b981' },
-                  { x: 'Bundi', y: 76, fillColor: '#10b981' },
-                  { x: 'Chittorgarh', y: 76, fillColor: '#10b981' },
-                  { x: 'Dausa', y: 77, fillColor: '#10b981' },
-                  { x: 'Deeg', y: 77, fillColor: '#10b981' },
-                  { x: 'Location 15', y: 48, fillColor: '#ef4444' },
-                  { x: 'Didwana Kuchaman', y: 54, fillColor: '#ef4444' },
-                  { x: 'Dholpur', y: 80, fillColor: '#10b981' }
-                ]
+                data: currentChartData
               }]}
               type="bar"
-              height={290}
+              height={340}
             />
+              );
+            })()}
           </div>
         </div>
       </div>
@@ -2096,7 +2876,7 @@ const AttendanceContent = () => {
             justifyContent: 'space-between',
             marginBottom: '20px'
           }}>
-            <div>
+            <div style={{ position: 'relative' }}>
               <h2 style={{
                 fontSize: '20px',
                 fontWeight: '600',
@@ -2105,24 +2885,119 @@ const AttendanceContent = () => {
               }}>
                 Attendance History
               </h2>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                color: '#6b7280',
-                fontSize: '14px',
-                marginTop: '14px',
-                padding: '4px 8px',
-                border: '1px solid #d1d5db',
-                borderRadius: '6px',
-                backgroundColor: 'white',
-                cursor: 'pointer',
-                width: 'fit-content'
-              }}>
-                <Calendar style={{ width: '16px', height: '16px' }} />
-                <span>Today</span>
-                <ChevronDown style={{ width: '16px', height: '16px' }} />
-              </div>
+               <div 
+                 onClick={() => setShowHistoryDateDropdown(!showHistoryDateDropdown)}
+                 data-history-date-dropdown
+                 style={{
+                   display: 'flex',
+                   alignItems: 'center',
+                   gap: '6px',
+                   color: '#6b7280',
+                   fontSize: '14px',
+                   marginTop: '14px',
+                   padding: '4px 8px',
+                   border: '1px solid #d1d5db',
+                   borderRadius: '6px',
+                   backgroundColor: 'white',
+                   cursor: 'pointer',
+                   width: 'fit-content'
+                 }}
+               >
+                 <Calendar style={{ width: '16px', height: '16px' }} />
+                 <span>{getHistoryDateDisplayText()}</span>
+                 <ChevronDown style={{ width: '16px', height: '16px' }} />
+               </div>
+               
+               {/* History Date Dropdown */}
+               {showHistoryDateDropdown && (
+                 <div 
+                   data-history-date-dropdown
+                   style={{
+                     position: 'absolute',
+                     top: '100%',
+                     left: '0',
+                     zIndex: 1000,
+                     backgroundColor: 'white',
+                     border: '1px solid #d1d5db',
+                     borderRadius: '8px',
+                     boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                     minWidth: '200px',
+                     marginTop: '4px'
+                   }}>
+                   {/* Predefined ranges */}
+                   <div style={{ padding: '8px 0' }}>
+                     {[
+                       { label: 'Today', value: 'today', days: 0 },
+                       { label: 'Yesterday', value: 'yesterday', days: 1 },
+                       { label: 'Last 7 days', value: 'last7days', days: 7 },
+                       { label: 'Last 30 days', value: 'last30days', days: 30 },
+                       { label: 'Last 90 days', value: 'last90days', days: 90 },
+                       { label: 'Custom', value: 'custom' }
+                     ].map((range) => (
+                       <div
+                         key={range.value}
+                         onClick={(e) => {
+                           console.log('🖱️ History date option clicked:', range);
+                           e.preventDefault();
+                           e.stopPropagation();
+                           handleHistoryDateRangeSelection(range);
+                         }}
+                         style={{
+                           padding: '8px 16px',
+                           cursor: 'pointer',
+                           fontSize: '14px',
+                           color: '#374151',
+                           backgroundColor: historyDateRange === range.label ? '#f3f4f6' : 'transparent'
+                         }}
+                         onMouseEnter={(e) => e.target.style.backgroundColor = '#f9fafb'}
+                         onMouseLeave={(e) => e.target.style.backgroundColor = historyDateRange === range.label ? '#f3f4f6' : 'transparent'}
+                       >
+                         {range.label}
+                       </div>
+                     ))}
+                   </div>
+                   
+                   {/* Custom date picker */}
+                   {isHistoryCustomRange && (
+                     <div style={{
+                       borderTop: '1px solid #e5e7eb',
+                       padding: '12px 16px',
+                       backgroundColor: '#f9fafb'
+                     }}>
+                       <div style={{ marginBottom: '8px', fontSize: '12px', fontWeight: '600', color: '#374151' }}>
+                         Select Date Range
+                       </div>
+                       <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                         <input
+                           type="date"
+                           value={historyStartDate || ''}
+                           onChange={(e) => setHistoryStartDate(e.target.value)}
+                           style={{
+                             padding: '4px 8px',
+                             border: '1px solid #d1d5db',
+                             borderRadius: '4px',
+                             fontSize: '12px',
+                             width: '100%'
+                           }}
+                         />
+                         <span style={{ fontSize: '12px', color: '#6b7280' }}>to</span>
+                         <input
+                           type="date"
+                           value={historyEndDate || ''}
+                           onChange={(e) => setHistoryEndDate(e.target.value)}
+                           style={{
+                             padding: '4px 8px',
+                             border: '1px solid #d1d5db',
+                             borderRadius: '4px',
+                             fontSize: '12px',
+                             width: '100%'
+                           }}
+                         />
+                       </div>
+                     </div>
+                   )}
+                 </div>
+               )}
             </div>
 
             <div style={{
@@ -2215,7 +3090,9 @@ const AttendanceContent = () => {
                     color: '#374151',
                     position: 'relative'
                   }}>
-                    District name
+                     {activeScope === 'State' ? 'District name' : 
+                      activeScope === 'Districts' ? 'Block name' : 
+                      activeScope === 'Blocks' ? 'GP name' : 'Village name'}
                     <div style={{
                       position: 'absolute',
                       right: '8px',
@@ -2251,42 +3128,77 @@ const AttendanceContent = () => {
                 </tr>
               </thead>
               <tbody>
-                {Array.from({ length: 5 }, (_, index) => (
-                  <tr key={index} style={{
-                    borderBottom: '1px solid #f3f4f6'
-                  }}>
-                    <td style={{
-                      padding: '12px',
+                {loadingHistory ? (
+                  <tr>
+                    <td colSpan="3" style={{
+                      padding: '40px',
+                      textAlign: 'center',
                       fontSize: '14px',
-                      color: '#374151'
+                      color: '#6b7280'
                     }}>
-                      Name
-                    </td>
-                    <td style={{
-                      padding: '12px',
-                      fontSize: '14px',
-                      color: '#374151'
-                    }}>
-                      80%
-                    </td>
-                    <td style={{
-                      padding: '12px',
-                      textAlign: 'right'
-                    }}>
-                      <button style={{
-                        padding: '6px 12px',
-                        backgroundColor: 'transparent',
-                        border: '1px solid #d1d5db',
-                        borderRadius: '6px',
-                        fontSize: '12px',
-                        color: '#374151',
-                        cursor: 'pointer'
-                      }}>
-                        Send notice
-                      </button>
+                      Loading attendance history...
                     </td>
                   </tr>
-                ))}
+                ) : historyError ? (
+                  <tr>
+                    <td colSpan="3" style={{
+                      padding: '40px',
+                      textAlign: 'center',
+                      fontSize: '14px',
+                      color: '#ef4444'
+                    }}>
+                      {historyError}
+                    </td>
+                  </tr>
+                ) : attendanceHistoryData.length === 0 ? (
+                  <tr>
+                    <td colSpan="3" style={{
+                      padding: '40px',
+                      textAlign: 'center',
+                      fontSize: '14px',
+                      color: '#6b7280'
+                    }}>
+                      No attendance data available for the selected period
+                    </td>
+                  </tr>
+                ) : (
+                  attendanceHistoryData.map((item, index) => (
+                    <tr key={item.id || index} style={{
+                      borderBottom: '1px solid #f3f4f6'
+                    }}>
+                      <td style={{
+                        padding: '12px',
+                        fontSize: '14px',
+                        color: '#374151'
+                      }}>
+                        {item.name}
+                      </td>
+                      <td style={{
+                        padding: '12px',
+                        fontSize: '14px',
+                        color: '#374151'
+                      }}>
+                        {item.attendancePercentage}%
+                      </td>
+                      <td style={{
+                        padding: '12px',
+                        textAlign: 'right'
+                      }}>
+                        <button style={{
+                          padding: '6px 12px',
+                          backgroundColor: 'transparent',
+                          border: '1px solid #d1d5db',
+                          borderRadius: '6px',
+                          fontSize: '12px',
+                          color: '#374151',
+                          cursor: 'pointer'
+                        }}>
+                          Send notice
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
