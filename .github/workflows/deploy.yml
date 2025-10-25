@@ -24,27 +24,30 @@ jobs:
       - name: Build Vite app
         run: npm run build
 
-      # ✅ Step 1: Copy build files to EC2
-      - name: Copy build files to server
+      # ✅ Step 1: Copy build files to EC2 temporary folder
+      - name: Copy build files to EC2
         uses: appleboy/scp-action@v0.1.4
         with:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           source: "dist/*"
-          target: "/var/www/SBMG-frontend/"
+          target: "/home/ubuntu/deploy-temp/"
           strip_components: 1
           overwrite: true
 
-      # ✅ Step 2: Restart Nginx on EC2
-      - name: Restart Nginx
+      # ✅ Step 2: Move files to Nginx directory with proper permissions
+      - name: Move files to Nginx directory
         uses: appleboy/ssh-action@v0.1.6
         with:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
+            sudo rm -rf /var/www/SBMG-frontend/*
+            sudo mv /home/ubuntu/deploy-temp/* /var/www/SBMG-frontend/
             sudo chown -R www-data:www-data /var/www/SBMG-frontend
             sudo chmod -R 755 /var/www/SBMG-frontend
+            sudo rm -rf /home/ubuntu/deploy-temp
             sudo systemctl restart nginx
-            echo "✅ Deployment complete!"
+            echo "✅ Deployment successful!"
