@@ -35,6 +35,42 @@ const InspectionContent = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [activePerformance, setActivePerformance] = useState('Time');
 
+  // Analytics data state
+  const [analyticsData, setAnalyticsData] = useState(null);
+  const [loadingAnalytics, setLoadingAnalytics] = useState(false);
+  const [analyticsError, setAnalyticsError] = useState(null);
+
+  // Critical issues data state
+  const [criticalIssuesData, setCriticalIssuesData] = useState(null);
+  const [loadingCriticalIssues, setLoadingCriticalIssues] = useState(false);
+  const [criticalIssuesError, setCriticalIssuesError] = useState(null);
+
+  // Top Performers data state
+  const [topPerformersData, setTopPerformersData] = useState(null);
+  const [loadingTopPerformers, setLoadingTopPerformers] = useState(false);
+  const [topPerformersError, setTopPerformersError] = useState(null);
+
+  // Your Inspections data state
+  const [yourInspectionsData, setYourInspectionsData] = useState(null);
+  const [loadingYourInspections, setLoadingYourInspections] = useState(false);
+  const [yourInspectionsError, setYourInspectionsError] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+
+  // Top Performers dropdown state
+  const [showPerformersDropdown1, setShowPerformersDropdown1] = useState(false);
+  const [showPerformersDropdown2, setShowPerformersDropdown2] = useState(false);
+  const [showPerformanceReportDropdown, setShowPerformanceReportDropdown] = useState(false);
+  const [selectedPerformersFilter1, setSelectedPerformersFilter1] = useState('District');
+  const [selectedPerformersFilter2, setSelectedPerformersFilter2] = useState('District');
+  const [selectedPerformanceReportFilter, setSelectedPerformanceReportFilter] = useState('District');
+
+  // Refs to prevent duplicate API calls
+  const analyticsCallInProgress = useRef(false);
+  const criticalIssuesCallInProgress = useRef(false);
+  const topPerformersCallInProgress = useRef(false);
+  const yourInspectionsCallInProgress = useRef(false);
+
   // Date selection state
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(null);
@@ -229,6 +265,455 @@ const InspectionContent = () => {
       // Close dropdown after selection
       setShowDateDropdown(false);
     }
+  };
+
+  // Fetch inspection analytics data from API
+  const fetchAnalyticsData = useCallback(async () => {
+    // Prevent duplicate calls
+    if (analyticsCallInProgress.current) {
+      console.log('⏸️ Analytics API call already in progress, skipping...');
+      return;
+    }
+    
+    try {
+      analyticsCallInProgress.current = true;
+      setLoadingAnalytics(true);
+      setAnalyticsError(null);
+
+      console.log('🔄 ===== INSPECTION ANALYTICS API CALL =====');
+      console.log('📍 Current State:', {
+        activeScope,
+        selectedLocation,
+        selectedDistrictId,
+        selectedBlockId,
+        selectedGPId,
+        startDate,
+        endDate
+      });
+
+      // Build query parameters based on selected scope
+      const params = new URLSearchParams();
+
+      // Determine level based on active scope
+      let level = 'DISTRICT'; // Default for State scope
+      if (activeScope === 'Districts') {
+        level = 'BLOCK';
+      } else if (activeScope === 'Blocks') {
+        level = 'VILLAGE';
+      } else if (activeScope === 'GPs') {
+        level = 'VILLAGE';
+      }
+      params.append('level', level);
+      console.log('📊 Level:', level);
+
+      // Add geography IDs based on selection
+      if (activeScope === 'Districts' && selectedDistrictId) {
+        params.append('district_id', selectedDistrictId);
+        console.log('🏙️  District ID:', selectedDistrictId);
+      } else if (activeScope === 'Blocks' && selectedBlockId) {
+        params.append('block_id', selectedBlockId);
+        console.log('🏘️  Block ID:', selectedBlockId);
+      } else if (activeScope === 'GPs' && selectedGPId) {
+        params.append('gp_id', selectedGPId);
+        console.log('🏡 GP ID:', selectedGPId);
+      }
+
+      // Add date range if available
+      if (startDate) {
+        params.append('start_date', startDate);
+        console.log('📅 Start Date:', startDate);
+      }
+      if (endDate) {
+        params.append('end_date', endDate);
+        console.log('📅 End Date:', endDate);
+      }
+
+      const url = `/inspections/analytics?${params.toString()}`;
+      console.log('🌐 Full API URL:', url);
+      console.log('🔗 Complete URL:', `${apiClient.defaults.baseURL}${url}`);
+      
+      const response = await apiClient.get(url);
+      
+      console.log('✅ Inspection Analytics API Response:', {
+        status: response.status,
+        statusText: response.statusText,
+        data: response.data
+      });
+      
+      setAnalyticsData(response.data);
+      
+      console.log('🔄 ===== END INSPECTION ANALYTICS API CALL =====\n');
+      
+    } catch (error) {
+      console.error('❌ ===== INSPECTION ANALYTICS API ERROR =====');
+      console.error('Error Type:', error.name);
+      console.error('Error Message:', error.message);
+      console.error('Error Details:', error.response?.data || error);
+      console.error('Status Code:', error.response?.status);
+      console.error('🔄 ===== END INSPECTION ANALYTICS API ERROR =====\n');
+      
+      setAnalyticsError(error.message || 'Failed to fetch analytics data');
+      setAnalyticsData(null);
+    } finally {
+      setLoadingAnalytics(false);
+      analyticsCallInProgress.current = false;
+    }
+  }, [activeScope, selectedLocation, selectedDistrictId, selectedBlockId, selectedGPId, startDate, endDate]);
+
+  // Fetch critical issues data from API
+  const fetchCriticalIssuesData = useCallback(async () => {
+    // Prevent duplicate calls
+    if (criticalIssuesCallInProgress.current) {
+      console.log('⏸️ Critical Issues API call already in progress, skipping...');
+      return;
+    }
+    
+    try {
+      criticalIssuesCallInProgress.current = true;
+      setLoadingCriticalIssues(true);
+      setCriticalIssuesError(null);
+
+      console.log('🔄 ===== CRITICAL ISSUES API CALL =====');
+      console.log('📍 Current State:', {
+        activeScope,
+        selectedLocation,
+        selectedDistrictId,
+        selectedBlockId,
+        selectedGPId,
+        startDate,
+        endDate
+      });
+
+      // Build query parameters based on selected scope
+      const params = new URLSearchParams();
+
+      // Add geography IDs based on selection
+      if (activeScope === 'Districts' && selectedDistrictId) {
+        params.append('district_id', selectedDistrictId);
+        console.log('🏙️  District ID:', selectedDistrictId);
+      } else if (activeScope === 'Blocks' && selectedBlockId) {
+        params.append('block_id', selectedBlockId);
+        console.log('🏘️  Block ID:', selectedBlockId);
+      } else if (activeScope === 'GPs' && selectedGPId) {
+        params.append('gp_id', selectedGPId);
+        console.log('🏡 GP ID:', selectedGPId);
+      }
+
+      // Add date range if available
+      if (startDate) {
+        params.append('start_date', startDate);
+        console.log('📅 Start Date:', startDate);
+      }
+      if (endDate) {
+        params.append('end_date', endDate);
+        console.log('📅 End Date:', endDate);
+      }
+
+      const url = `/inspections/criticals?${params.toString()}`;
+      console.log('🌐 Full API URL:', url);
+      console.log('🔗 Complete URL:', `${apiClient.defaults.baseURL}${url}`);
+      
+      const response = await apiClient.get(url);
+      
+      console.log('✅ Critical Issues API Response:', {
+        status: response.status,
+        statusText: response.statusText,
+        data: response.data
+      });
+      
+      setCriticalIssuesData(response.data);
+      
+      console.log('🔄 ===== END CRITICAL ISSUES API CALL =====\n');
+      
+    } catch (error) {
+      console.error('❌ ===== CRITICAL ISSUES API ERROR =====');
+      console.error('Error Type:', error.name);
+      console.error('Error Message:', error.message);
+      console.error('Error Details:', error.response?.data || error);
+      console.error('Status Code:', error.response?.status);
+      console.error('🔄 ===== END CRITICAL ISSUES API ERROR =====\n');
+      
+      setCriticalIssuesError(error.message || 'Failed to fetch critical issues data');
+      setCriticalIssuesData(null);
+    } finally {
+      setLoadingCriticalIssues(false);
+      criticalIssuesCallInProgress.current = false;
+    }
+  }, [activeScope, selectedLocation, selectedDistrictId, selectedBlockId, selectedGPId, startDate, endDate]);
+
+  // Fetch top performers data from API
+  const fetchTopPerformersData = useCallback(async (level) => {
+    // Prevent duplicate calls
+    if (topPerformersCallInProgress.current) {
+      console.log('⏸️ Top Performers API call already in progress, skipping...');
+      return;
+    }
+    
+    try {
+      topPerformersCallInProgress.current = true;
+      setLoadingTopPerformers(true);
+      setTopPerformersError(null);
+
+      console.log('🔄 ===== TOP PERFORMERS API CALL =====');
+      console.log('📍 Level:', level);
+
+      // Map dropdown selection to API level
+      let apiLevel = 'DISTRICT';
+      if (level === 'Block') {
+        apiLevel = 'BLOCK';
+      } else if (level === 'GP') {
+        apiLevel = 'VILLAGE';
+      }
+
+      const url = `/inspectionstop-performers?level=${apiLevel}`;
+      console.log('🌐 Full API URL:', url);
+      console.log('🔗 Complete URL:', `${apiClient.defaults.baseURL}${url}`);
+      
+      const response = await apiClient.get(url);
+      
+      console.log('✅ Top Performers API Response:', {
+        status: response.status,
+        statusText: response.statusText,
+        data: response.data
+      });
+      
+      setTopPerformersData(response.data);
+      
+      console.log('🔄 ===== END TOP PERFORMERS API CALL =====\n');
+      
+    } catch (error) {
+      console.error('❌ ===== TOP PERFORMERS API ERROR =====');
+      console.error('Error Type:', error.name);
+      console.error('Error Message:', error.message);
+      console.error('Error Details:', error.response?.data || error);
+      console.error('Status Code:', error.response?.status);
+      console.error('🔄 ===== END TOP PERFORMERS API ERROR =====\n');
+      
+      setTopPerformersError(error.message || 'Failed to fetch top performers data');
+      setTopPerformersData(null);
+    } finally {
+      setLoadingTopPerformers(false);
+      topPerformersCallInProgress.current = false;
+    }
+  }, []);
+
+  // Fetch Your Inspections data from API
+  const fetchYourInspectionsData = useCallback(async (page = 1) => {
+    // Prevent duplicate calls
+    if (yourInspectionsCallInProgress.current) {
+      console.log('⏸️ Your Inspections API call already in progress, skipping...');
+      return;
+    }
+    
+    try {
+      yourInspectionsCallInProgress.current = true;
+      setLoadingYourInspections(true);
+      setYourInspectionsError(null);
+
+      console.log('🔄 ===== YOUR INSPECTIONS API CALL =====');
+      console.log('📍 Page:', page);
+
+      // Get current year dates
+      const currentYear = new Date().getFullYear();
+      const startDate = `${currentYear}-01-01`;
+      const endDate = `${currentYear}-12-31`;
+
+      const params = new URLSearchParams({
+        page: page.toString(),
+        page_size: '20',
+        start_date: startDate,
+        end_date: endDate
+      });
+
+      const url = `/inspections/my?${params.toString()}`;
+      console.log('🌐 Full API URL:', url);
+      console.log('🔗 Complete URL:', `${apiClient.defaults.baseURL}${url}`);
+      
+      const response = await apiClient.get(url);
+      
+      console.log('✅ Your Inspections API Response:', {
+        status: response.status,
+        statusText: response.statusText,
+        data: response.data
+      });
+      
+      setYourInspectionsData(response.data);
+      setCurrentPage(response.data.page || 1);
+      setTotalPages(response.data.total_pages || 1);
+      
+      console.log('🔄 ===== END YOUR INSPECTIONS API CALL =====\n');
+      
+    } catch (error) {
+      console.error('❌ ===== YOUR INSPECTIONS API ERROR =====');
+      console.error('Error Type:', error.name);
+      console.error('Error Message:', error.message);
+      console.error('Error Details:', error.response?.data || error);
+      console.error('Status Code:', error.response?.status);
+      console.error('🔄 ===== END YOUR INSPECTIONS API ERROR =====\n');
+      
+      setYourInspectionsError(error.message || 'Failed to fetch your inspections data');
+      setYourInspectionsData(null);
+    } finally {
+      setLoadingYourInspections(false);
+      yourInspectionsCallInProgress.current = false;
+    }
+  }, []);
+
+  // Effect to fetch analytics when scope or location changes
+  useEffect(() => {
+    fetchAnalyticsData();
+  }, [fetchAnalyticsData]);
+
+  // Effect to fetch critical issues when scope or location changes
+  useEffect(() => {
+    fetchCriticalIssuesData();
+  }, [fetchCriticalIssuesData]);
+
+  // Effect to fetch top performers data when dropdown selection changes
+  useEffect(() => {
+    fetchTopPerformersData(selectedPerformersFilter1);
+  }, [selectedPerformersFilter1, fetchTopPerformersData]);
+
+  // Effect to fetch Your Inspections data when component mounts
+  useEffect(() => {
+    fetchYourInspectionsData(1);
+  }, [fetchYourInspectionsData]);
+
+  // Effect to close dropdowns when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      // Close all dropdowns when clicking outside
+      if (!event.target.closest('[data-dropdown]')) {
+        setShowPerformersDropdown1(false);
+        setShowPerformersDropdown2(false);
+        setShowPerformanceReportDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  // Helper functions to extract values from analyticsData
+  const getAverageScore = () => {
+    if (loadingAnalytics) return '...';
+    if (analyticsError || !analyticsData || !analyticsData.response || analyticsData.response.length === 0) {
+      return '0%';
+    }
+    
+    const scores = analyticsData.response.map(item => item.average_score || 0);
+    const sum = scores.reduce((acc, score) => acc + score, 0);
+    const average = scores.length > 0 ? sum / scores.length : 0;
+    return `${average.toFixed(0)}%`;
+  };
+
+  const getTotalInspections = () => {
+    if (loadingAnalytics) return '...';
+    if (analyticsError || !analyticsData || !analyticsData.response || analyticsData.response.length === 0) {
+      return '0';
+    }
+    
+    // Sum up inspections based on geo_type
+    const total = analyticsData.response.reduce((acc, item) => {
+      if (analyticsData.geo_type === 'DISTRICT') {
+        return acc + (item.inspected_blocks || 0);
+      } else if (analyticsData.geo_type === 'BLOCK' || analyticsData.geo_type === 'VILLAGE') {
+        return acc + (item.inspected_gps || 0);
+      }
+      return acc;
+    }, 0);
+    
+    return total.toLocaleString();
+  };
+
+  const getVillageCoverage = () => {
+    if (loadingAnalytics) return '0/0';
+    if (analyticsError || !analyticsData || !analyticsData.response || analyticsData.response.length === 0) {
+      return '0/0';
+    }
+    
+    const inspectedGPs = analyticsData.response.reduce((acc, item) => acc + (item.inspected_gps || 0), 0);
+    const totalGPs = analyticsData.response.reduce((acc, item) => acc + (item.total_gps || 0), 0);
+    
+    return `${inspectedGPs.toLocaleString()}/${totalGPs.toLocaleString()}`;
+  };
+
+  // Helper functions to extract values from criticalIssuesData
+  const getCriticalIssuesCount = (issueType) => {
+    if (loadingCriticalIssues) return '...';
+    if (criticalIssuesError || !criticalIssuesData) {
+      return '0';
+    }
+    
+    return criticalIssuesData[issueType]?.toLocaleString() || '0';
+  };
+
+  // Helper functions to extract values from topPerformersData
+  const getTopPerformers = () => {
+    if (loadingTopPerformers) return [];
+    if (topPerformersError || !topPerformersData || !Array.isArray(topPerformersData) || topPerformersData.length === 0) {
+      return [];
+    }
+    
+    // Get the first item from the response array and return its inspectors
+    const firstItem = topPerformersData[0];
+    return firstItem?.inspectors || [];
+  };
+
+  // Helper functions to extract values from yourInspectionsData
+  const getYourInspections = () => {
+    if (loadingYourInspections) return [];
+    if (yourInspectionsError || !yourInspectionsData || !yourInspectionsData.items) {
+      return [];
+    }
+    
+    return yourInspectionsData.items || [];
+  };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-GB'); // DD/MM/YYYY format
+  };
+
+  // Dropdown options for Top Performers
+  const performersFilterOptions1 = ['District', 'Block', 'GP'];
+  const performersFilterOptions2 = ['District', 'Block', 'GP'];
+
+  // Dropdown click handlers
+  const handlePerformersDropdown1Click = () => {
+    setShowPerformersDropdown1(!showPerformersDropdown1);
+    setShowPerformersDropdown2(false); // Close other dropdown
+    setShowPerformanceReportDropdown(false); // Close other dropdown
+  };
+
+  const handlePerformersDropdown2Click = () => {
+    setShowPerformersDropdown2(!showPerformersDropdown2);
+    setShowPerformersDropdown1(false); // Close other dropdown
+    setShowPerformanceReportDropdown(false); // Close other dropdown
+  };
+
+  const handlePerformanceReportDropdownClick = () => {
+    setShowPerformanceReportDropdown(!showPerformanceReportDropdown);
+    setShowPerformersDropdown1(false); // Close other dropdown
+    setShowPerformersDropdown2(false); // Close other dropdown
+  };
+
+  const handlePerformersFilter1Select = (filter) => {
+    setSelectedPerformersFilter1(filter);
+    setShowPerformersDropdown1(false);
+  };
+
+  const handlePerformersFilter2Select = (filter) => {
+    setSelectedPerformersFilter2(filter);
+    setShowPerformersDropdown2(false);
+  };
+
+  const handlePerformanceReportFilterSelect = (filter) => {
+    setSelectedPerformanceReportFilter(filter);
+    setShowPerformanceReportDropdown(false);
   };
 
   // Chart data for State Performance Score
@@ -834,7 +1319,7 @@ const InspectionContent = () => {
                 color: '#111827',
                 margin: 0
               }}>
-                76%
+                {getAverageScore()}
               </div>
             </div>
 
@@ -870,7 +1355,7 @@ const InspectionContent = () => {
                 color: '#111827',
                 margin: 0
               }}>
-                3,452
+                {getTotalInspections()}
               </div>
             </div>
 
@@ -903,7 +1388,7 @@ const InspectionContent = () => {
                 color: '#111827',
                 margin: 0
               }}>
-                400/3000
+                {getVillageCoverage()}
               </div>
             </div>
           </div>
@@ -992,6 +1477,7 @@ const InspectionContent = () => {
           <div style={{
             backgroundColor: 'white',
             padding: '20px',
+            marginLeft: '16px',
             borderRadius: '12px',
             border: '1px solid #e5e7eb',
             boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)'
@@ -1012,6 +1498,39 @@ const InspectionContent = () => {
               margin: '2px 0'
             }}></div>
 
+            {/* Loading State */}
+            {loadingCriticalIssues && (
+              <div style={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                padding: '40px 20px',
+                color: '#6b7280',
+                fontSize: '14px'
+              }}>
+                Loading critical issues...
+              </div>
+            )}
+
+            {/* Error State */}
+            {criticalIssuesError && !loadingCriticalIssues && (
+              <div style={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                padding: '40px 20px',
+                color: '#ef4444',
+                fontSize: '14px',
+                backgroundColor: '#fef2f2',
+                borderRadius: '8px',
+                margin: '10px 0'
+              }}>
+                Error: {criticalIssuesError}
+              </div>
+            )}
+
+            {/* Data State */}
+            {!loadingCriticalIssues && !criticalIssuesError && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
               {/* Issue 1 */}
               <div style={{
@@ -1022,7 +1541,9 @@ const InspectionContent = () => {
                 borderBottom: '1px solid #f3f4f6'
               }}>
                 <span style={{ fontSize: '16px', color: '#374151' }}>No Safety Equipment</span>
-                <span style={{ fontSize: '16px', fontWeight: '600', color: '#111827' }}>2,150</span>
+                <span style={{ fontSize: '16px', fontWeight: '600', color: '#111827' }}>
+                  {getCriticalIssuesCount('no_safety_equipment')}
+                </span>
               </div>
               
               {/* Issue 2 */}
@@ -1033,8 +1554,10 @@ const InspectionContent = () => {
                 padding: '12px 12px',
                 borderBottom: '1px solid #f3f4f6'
               }}>
-                <span style={{ fontSize: '16px', color: '6b7280' }}>CSC without water/Elec.</span>
-                <span style={{ fontSize: '16px', fontWeight: '600', color: '#111827' }}>1,830</span>
+                <span style={{ fontSize: '16px', color: '#6b7280' }}>CSC without water/Elec.</span>
+                <span style={{ fontSize: '16px', fontWeight: '600', color: '#111827' }}>
+                  {getCriticalIssuesCount('csc_wo_water_or_electricity')}
+                </span>
               </div>
               
               {/* Issue 3 */}
@@ -1046,7 +1569,9 @@ const InspectionContent = () => {
                 borderBottom: '1px solid #f3f4f6'
               }}>
                 <span style={{ fontSize: '16px', color: '#374151' }}>Firm Not Paid</span>
-                <span style={{ fontSize: '16px', fontWeight: '600', color: '#111827' }}>1,204</span>
+                <span style={{ fontSize: '16px', fontWeight: '600', color: '#111827' }}>
+                  {getCriticalIssuesCount('firm_not_paid')}
+                </span>
               </div>
               
               {/* Issue 4 */}
@@ -1057,8 +1582,10 @@ const InspectionContent = () => {
                 padding: '12px 12px',
                 borderBottom: '1px solid #f3f4f6'
               }}>
-                <span style={{ fontSize: '16px', color: '6b7280' }}>Staff Not Paid</span>
-                <span style={{ fontSize: '16px', fontWeight: '600', color: '#111827' }}>980</span>
+                <span style={{ fontSize: '16px', color: '#6b7280' }}>Staff Not Paid</span>
+                <span style={{ fontSize: '16px', fontWeight: '600', color: '#111827' }}>
+                  {getCriticalIssuesCount('staff_not_paid')}
+                </span>
               </div>
               
               {/* Issue 5 */}
@@ -1068,15 +1595,19 @@ const InspectionContent = () => {
                 alignItems: 'center',
                 padding: '12px 12px'
               }}>
-                <span style={{ fontSize: '16px', color: '6b7280' }}>Visibly Not Clean</span>
-                <span style={{ fontSize: '16px', fontWeight: '600', color: '#111827' }}>850</span>
+                <span style={{ fontSize: '16px', color: '#6b7280' }}>Visibly Not Clean</span>
+                <span style={{ fontSize: '16px', fontWeight: '600', color: '#111827' }}>
+                  {getCriticalIssuesCount('visibly_unclean_village')}
+                </span>
               </div>
             </div>
+            )}
           </div>
 
           {/* Top 3 Performers */}
           <div style={{
             backgroundColor: 'white',
+            marginRight: '16px',
             padding: '20px',
             borderRadius: '12px',
             border: '1px solid #e5e7eb',
@@ -1098,18 +1629,58 @@ const InspectionContent = () => {
               </h3>
               
               {/* Dropdown */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                padding: '6px 12px',
-                backgroundColor: '#f9fafb',
-                borderRadius: '8px',
-                border: '1px solid #e5e7eb',
-                cursor: 'pointer'
-              }}>
-                <span style={{ fontSize: '14px', color: '#374151' }}>CEO</span>
+              <div 
+                data-dropdown
+                style={{
+                  position: 'relative',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '6px 12px',
+                  backgroundColor: '#f9fafb',
+                  borderRadius: '8px',
+                  border: '1px solid #e5e7eb',
+                  cursor: 'pointer'
+                }}
+                onClick={handlePerformersDropdown1Click}>
+                <span style={{ fontSize: '14px', color: '#374151' }}>{selectedPerformersFilter1}</span>
                 <ChevronDown style={{ width: '16px', height: '16px', color: '#6b7280' }} />
+                
+                {/* Dropdown Menu */}
+                {showPerformersDropdown1 && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '100%',
+                    right: '0',
+                    backgroundColor: 'white',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '8px',
+                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                    zIndex: 1000,
+                    marginTop: '4px',
+                    minWidth: '120px'
+                  }}>
+                    {performersFilterOptions1.map((option) => (
+                      <div
+                        key={option}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handlePerformersFilter1Select(option);
+                        }}
+                        style={{
+                          padding: '8px 12px',
+                          cursor: 'pointer',
+                          fontSize: '14px',
+                          color: '#374151',
+                          backgroundColor: selectedPerformersFilter1 === option ? '#f3f4f6' : 'transparent',
+                          borderBottom: option !== performersFilterOptions1[performersFilterOptions1.length - 1] ? '1px solid #f3f4f6' : 'none'
+                        }}
+                      >
+                        {option}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
             
@@ -1133,79 +1704,68 @@ const InspectionContent = () => {
               <div>Inspections</div>
             </div>
             
-            {/* Performer 1 */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '60px 1fr 1fr 100px',
-              gap: '12px',
-              padding: '12px',
-              alignItems: 'center',
-              borderBottom: '1px solid #f3f4f6'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'start', justifyContent: 'start' }}>
-                <img 
-                  src={number1} 
-                  alt="Rank 1" 
-                  style={{ 
-                    width: '52px', 
-                    height: '52px',
-                    objectFit: 'contain'
-                  }} 
-                />
+            {/* Loading State */}
+            {loadingTopPerformers && (
+              <div style={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                padding: '40px 20px',
+                color: '#6b7280',
+                fontSize: '14px'
+              }}>
+                Loading top performers...
               </div>
-              <div style={{ fontSize: '14px', color: '#374151' }}>Er. Rohan</div>
-              <div style={{ fontSize: '14px', color: '#374151' }}>Jodhpur</div>
-              <div style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>123</div>
-            </div>
-            
-            {/* Performer 2 */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '60px 1fr 1fr 100px',
-              gap: '12px',
-              padding: '12px',
-              alignItems: 'center',
-              borderBottom: '1px solid #f3f4f6'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'start', justifyContent: 'start' }}>
-                <img 
-                  src={number2} 
-                  alt="Rank 2" 
-                  style={{ 
-                    width: '52px', 
-                    height: '52px',
-                    objectFit: 'contain'
-                  }} 
-                />
+            )}
+
+            {/* Error State */}
+            {topPerformersError && !loadingTopPerformers && (
+              <div style={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                padding: '40px 20px',
+                color: '#ef4444',
+                fontSize: '14px',
+                backgroundColor: '#fef2f2',
+                borderRadius: '8px',
+                margin: '10px 0'
+              }}>
+                Error: {topPerformersError}
               </div>
-              <div style={{ fontSize: '14px', color: '#374151' }}>Er. Mohan</div>
-              <div style={{ fontSize: '14px', color: '#374151' }}>Jaipur</div>
-              <div style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>122</div>
-            </div>
-            
-            {/* Performer 3 */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '60px 1fr 1fr 100px',
-              gap: '12px',
-              padding: '12px',
-              alignItems: 'center'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'start', justifyContent: 'start' }}>
-                <img 
-                  src={number3} 
-                  alt="Rank 3" 
-                  style={{ 
-                    width: '52px', 
-                    height: '52px',
-                    objectFit: 'contain'
-                  }} 
-                />
-              </div>
-              <div style={{ fontSize: '14px', color: '#374151' }}>Er. Sohan</div>
-              <div style={{ fontSize: '14px', color: '#374151' }}>Udaipur</div>
-              <div style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>121</div>
-            </div>
+            )}
+
+            {/* Data State */}
+            {!loadingTopPerformers && !topPerformersError && getTopPerformers().map((performer, index) => {
+              const rankImages = [number1, number2, number3];
+              const rankImage = rankImages[index] || number3;
+              
+              return (
+                <div key={performer.geo_id || index} style={{
+                  display: 'grid',
+                  gridTemplateColumns: '60px 1fr 1fr 100px',
+                  gap: '12px',
+                  padding: '12px',
+                  alignItems: 'center',
+                  borderBottom: index < 2 ? '1px solid #f3f4f6' : 'none'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'start', justifyContent: 'start' }}>
+                    <img 
+                      src={rankImage} 
+                      alt={`Rank ${index + 1}`} 
+                      style={{ 
+                        width: '52px', 
+                        height: '52px',
+                        objectFit: 'contain'
+                      }} 
+                    />
+                  </div>
+                  <div style={{ fontSize: '14px', color: '#374151' }}>{performer.inspector_name || 'N/A'}</div>
+                  <div style={{ fontSize: '14px', color: '#374151' }}>{performer.geo_name || 'N/A'}</div>
+                  <div style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>{performer.inspections_count || 0}</div>
+                </div>
+              );
+            })}
           </div>
         </div>
 
@@ -1214,7 +1774,8 @@ const InspectionContent = () => {
           display: 'grid',
           gridTemplateColumns: '1fr 2fr',
           gap: '16px',
-          marginTop: '16px'
+          marginTop: '16px',
+          marginLeft: '16px',
         }}>
           {/* Top 3 Performers - Updated Version */}
           <div style={{
@@ -1240,18 +1801,58 @@ const InspectionContent = () => {
               </h3>
               
               {/* District Dropdown */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                padding: '6px 12px',
-                backgroundColor: '#f9fafb',
-                borderRadius: '8px',
-                border: '1px solid #e5e7eb',
-                cursor: 'pointer'
-              }}>
-                <span style={{ fontSize: '14px', color: '#374151' }}>District</span>
+              <div 
+                data-dropdown
+                style={{
+                  position: 'relative',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '6px 12px',
+                  backgroundColor: '#f9fafb',
+                  borderRadius: '8px',
+                  border: '1px solid #e5e7eb',
+                  cursor: 'pointer'
+                }}
+                onClick={handlePerformersDropdown2Click}>
+                <span style={{ fontSize: '14px', color: '#374151' }}>{selectedPerformersFilter2}</span>
                 <ChevronDown style={{ width: '16px', height: '16px', color: '#6b7280' }} />
+                
+                {/* Dropdown Menu */}
+                {showPerformersDropdown2 && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '100%',
+                    right: '0',
+                    backgroundColor: 'white',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '8px',
+                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                    zIndex: 1000,
+                    marginTop: '4px',
+                    minWidth: '120px'
+                  }}>
+                    {performersFilterOptions2.map((option) => (
+                      <div
+                        key={option}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handlePerformersFilter2Select(option);
+                        }}
+                        style={{
+                          padding: '8px 12px',
+                          cursor: 'pointer',
+                          fontSize: '14px',
+                          color: '#374151',
+                          backgroundColor: selectedPerformersFilter2 === option ? '#f3f4f6' : 'transparent',
+                          borderBottom: option !== performersFilterOptions2[performersFilterOptions2.length - 1] ? '1px solid #f3f4f6' : 'none'
+                        }}
+                      >
+                        {option}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
             
@@ -1274,76 +1875,67 @@ const InspectionContent = () => {
               <div>Score</div>
             </div>
             
-            {/* Performer 1 */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '80px 1fr 100px',
-              gap: '12px',
-              padding: '12px',
-              alignItems: 'center',
-              borderBottom: '1px solid #f3f4f6'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'start', justifyContent: 'start' }}>
-                <img 
-                  src={number1} 
-                  alt="Rank 1" 
-                  style={{ 
-                    width: '50px', 
-                    height: '50px',
-                    objectFit: 'contain'
-                  }} 
-                />
+            {/* Loading State */}
+            {loadingTopPerformers && (
+              <div style={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                padding: '40px 20px',
+                color: '#6b7280',
+                fontSize: '14px'
+              }}>
+                Loading top performers...
               </div>
-              <div style={{ fontSize: '14px', color: '#374151' }}>Jodhpur</div>
-              <div style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>80%</div>
-            </div>
-            
-            {/* Performer 2 */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '80px 1fr 100px',
-              gap: '12px',
-              padding: '12px',
-              alignItems: 'center',
-              borderBottom: '1px solid #f3f4f6'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'start', justifyContent: 'start' }}>
-                <img 
-                  src={number2} 
-                  alt="Rank 2" 
-                  style={{ 
-                    width: '50px', 
-                    height: '50px',
-                    objectFit: 'contain'
-                  }} 
-                />
+            )}
+
+            {/* Error State */}
+            {topPerformersError && !loadingTopPerformers && (
+              <div style={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                padding: '40px 20px',
+                color: '#ef4444',
+                fontSize: '14px',
+                backgroundColor: '#fef2f2',
+                borderRadius: '8px',
+                margin: '10px 0'
+              }}>
+                Error: {topPerformersError}
               </div>
-              <div style={{ fontSize: '14px', color: '#374151' }}>Jaipur</div>
-              <div style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>75%</div>
-            </div>
-            
-            {/* Performer 3 */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '80px 1fr 100px',
-              gap: '12px',
-              padding: '12px',
-              alignItems: 'center'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'start', justifyContent: 'start' }}>
-                <img 
-                  src={number3} 
-                  alt="Rank 3" 
-                  style={{ 
-                    width: '50px', 
-                    height: '50px',
-                    objectFit: 'contain'
-                  }} 
-                />
-              </div>
-              <div style={{ fontSize: '14px', color: '#374151' }}>Udaipur</div>
-              <div style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>60%</div>
-            </div>
+            )}
+
+            {/* Data State */}
+            {!loadingTopPerformers && !topPerformersError && getTopPerformers().map((performer, index) => {
+              const rankImages = [number1, number2, number3];
+              const rankImage = rankImages[index] || number3;
+              
+              return (
+                <div key={performer.geo_id || index} style={{
+                  display: 'grid',
+                  gridTemplateColumns: '80px 1fr 100px',
+                  gap: '12px',
+                  padding: '12px',
+                  alignItems: 'center',
+                  borderBottom: index < 2 ? '1px solid #f3f4f6' : 'none'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'start', justifyContent: 'start' }}>
+                    <img 
+                      src={rankImage} 
+                      alt={`Rank ${index + 1}`} 
+                      style={{ 
+                        width: '50px', 
+                        height: '50px',
+                        objectFit: 'contain'
+                      }} 
+                    />
+                  </div>
+                  <div style={{ fontSize: '14px', color: '#374151' }}>{performer.geo_name || 'N/A'}</div>
+                  <div style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>{performer.inspections_count || 0}</div>
+                </div>
+              );
+            })}
           </div>
 
           {/* Performance Report */}
@@ -1352,7 +1944,8 @@ const InspectionContent = () => {
             padding: '14px',
             borderRadius: '12px',
             border: '1px solid #e5e7eb',
-            boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)'
+            boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)',
+            marginRight: '16px',
           }}>
             <div style={{
               display: 'flex',
@@ -1370,18 +1963,58 @@ const InspectionContent = () => {
               </h3>
               
               {/* District Dropdown */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                padding: '6px 12px',
-                backgroundColor: '#f9fafb',
-                borderRadius: '8px',
-                border: '1px solid #e5e7eb',
-                cursor: 'pointer'
-              }}>
-                <span style={{ fontSize: '14px', color: '#374151' }}>District</span>
+              <div 
+                data-dropdown
+                style={{
+                  position: 'relative',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '6px 12px',
+                  backgroundColor: '#f9fafb',
+                  borderRadius: '8px',
+                  border: '1px solid #e5e7eb',
+                  cursor: 'pointer'
+                }}
+                onClick={handlePerformanceReportDropdownClick}>
+                <span style={{ fontSize: '14px', color: '#374151' }}>{selectedPerformanceReportFilter}</span>
                 <ChevronDown style={{ width: '16px', height: '16px', color: '#6b7280' }} />
+                
+                {/* Dropdown Menu */}
+                {showPerformanceReportDropdown && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '100%',
+                    right: '0',
+                    backgroundColor: 'white',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '8px',
+                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                    zIndex: 1000,
+                    marginTop: '4px',
+                    minWidth: '120px'
+                  }}>
+                    {performersFilterOptions2.map((option) => (
+                      <div
+                        key={option}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handlePerformanceReportFilterSelect(option);
+                        }}
+                        style={{
+                          padding: '8px 12px',
+                          cursor: 'pointer',
+                          fontSize: '14px',
+                          color: '#374151',
+                          backgroundColor: selectedPerformanceReportFilter === option ? '#f3f4f6' : 'transparent',
+                          borderBottom: option !== performersFilterOptions2[performersFilterOptions2.length - 1] ? '1px solid #f3f4f6' : 'none'
+                        }}
+                      >
+                        {option}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
             
@@ -1510,7 +2143,9 @@ const InspectionContent = () => {
 
         {/* Your Inspections Table */}
         <div style={{
-          marginTop: '16px'
+          marginTop: '16px',
+          marginLeft: '16px',
+          marginRight: '16px',
         }}>
           <div style={{
             backgroundColor: 'white',
@@ -1550,7 +2185,7 @@ const InspectionContent = () => {
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                Village Name
+                Block Name
                 <div style={{ display: 'flex', flexDirection: 'column' }}>
                   <span style={{ fontSize: '10px', lineHeight: '1' }}>▲</span>
                   <span style={{ fontSize: '10px', lineHeight: '1' }}>▼</span>
@@ -1580,109 +2215,128 @@ const InspectionContent = () => {
               <div>Action</div>
             </div>
             
-            {/* Table Data Rows */}
-            <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
-              {/* Row 1 */}
+            {/* Loading State */}
+            {loadingYourInspections && (
               <div style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr 1fr',
-                gap: '20px',
-                padding: '12px',
+                display: 'flex',
+                justifyContent: 'center',
                 alignItems: 'center',
-                borderBottom: '1px solid #f3f4f6'
+                padding: '40px 20px',
+                color: '#6b7280',
+                fontSize: '14px'
               }}>
-                <div style={{ fontSize: '14px', color: '#374151' }}>12/02/2025</div>
-                <div style={{ fontSize: '14px', color: '#374151' }}>Village name</div>
-                <div style={{ fontSize: '14px', color: '#374151' }}>GP name</div>
-                <div style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>76%</div>
-                <div style={{ fontSize: '14px', color: '#10b981', fontWeight: '500' }}>Yes</div>
-                <div style={{ fontSize: '14px', color: '#6b7280', cursor: 'pointer', textDecoration: 'underline' }}>Download report</div>
+                Loading your inspections...
               </div>
-              
-              {/* Row 2 */}
+            )}
+
+            {/* Error State */}
+            {yourInspectionsError && !loadingYourInspections && (
               <div style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr 1fr',
-                gap: '20px',
-                padding: '12px',
+                display: 'flex',
+                justifyContent: 'center',
                 alignItems: 'center',
-                borderBottom: '1px solid #f3f4f6'
+                padding: '40px 20px',
+                color: '#ef4444',
+                fontSize: '14px',
+                backgroundColor: '#fef2f2',
+                borderRadius: '8px',
+                margin: '10px 0'
               }}>
-                <div style={{ fontSize: '14px', color: '#374151' }}>12/02/2025</div>
-                <div style={{ fontSize: '14px', color: '#374151' }}>Village name</div>
-                <div style={{ fontSize: '14px', color: '#374151' }}>GP name</div>
-                <div style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>76%</div>
-                <div style={{ fontSize: '14px', color: '#10b981', fontWeight: '500' }}>Yes</div>
-                <div style={{ fontSize: '14px', color: '#6b7280', cursor: 'pointer', textDecoration: 'underline' }}>Download report</div>
+                Error: {yourInspectionsError}
               </div>
-              
-              {/* Row 3 */}
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr 1fr',
-                gap: '20px',
-                padding: '12px',
-                alignItems: 'center',
-                borderBottom: '1px solid #f3f4f6'
-              }}>
-                <div style={{ fontSize: '14px', color: '#374151' }}>12/02/2025</div>
-                <div style={{ fontSize: '14px', color: '#374151' }}>Village name</div>
-                <div style={{ fontSize: '14px', color: '#374151' }}>GP name</div>
-                <div style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>76%</div>
-                <div style={{ fontSize: '14px', color: '#ef4444', fontWeight: '500' }}>No</div>
-                <div style={{ fontSize: '14px', color: '#6b7280', cursor: 'pointer', textDecoration: 'underline' }}>Download report</div>
+            )}
+
+            {/* Data State */}
+            {!loadingYourInspections && !yourInspectionsError && (
+              <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                {getYourInspections().map((inspection, index) => (
+                  <div key={inspection.id || index} style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr 1fr',
+                    gap: '20px',
+                    padding: '12px',
+                    alignItems: 'center',
+                    borderBottom: index < getYourInspections().length - 1 ? '1px solid #f3f4f6' : 'none'
+                  }}>
+                    <div style={{ fontSize: '14px', color: '#374151' }}>
+                      {formatDate(inspection.date)}
+                    </div>
+                    <div style={{ fontSize: '14px', color: '#374151' }}>
+                      {inspection.block_name || 'N/A'}
+                    </div>
+                    <div style={{ fontSize: '14px', color: '#374151' }}>
+                      {inspection.village_name || 'N/A'}
+                    </div>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>
+                      {inspection.overall_score || 0}%
+                    </div>
+                    <div style={{ 
+                      fontSize: '14px', 
+                      fontWeight: '500',
+                      color: inspection.visibly_clean ? '#10b981' : '#ef4444'
+                    }}>
+                      {inspection.visibly_clean ? 'Yes' : 'No'}
+                    </div>
+                    <div style={{ 
+                      fontSize: '14px', 
+                      color: '#6b7280', 
+                      cursor: 'pointer', 
+                      textDecoration: 'underline' 
+                    }}>
+                      Download report
+                    </div>
+                  </div>
+                ))}
+                
+                {/* Pagination */}
+                {totalPages > 1 && (
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '20px',
+                    borderTop: '1px solid #f3f4f6'
+                  }}>
+                    <button
+                      onClick={() => fetchYourInspectionsData(currentPage - 1)}
+                      disabled={currentPage <= 1}
+                      style={{
+                        padding: '8px 12px',
+                        border: '1px solid #d1d5db',
+                        borderRadius: '6px',
+                        backgroundColor: currentPage <= 1 ? '#f9fafb' : 'white',
+                        color: currentPage <= 1 ? '#9ca3af' : '#374151',
+                        cursor: currentPage <= 1 ? 'not-allowed' : 'pointer',
+                        fontSize: '14px'
+                      }}
+                    >
+                      Previous
+                    </button>
+                    
+                    <span style={{ fontSize: '14px', color: '#6b7280' }}>
+                      Page {currentPage} of {totalPages}
+                    </span>
+                    
+                    <button
+                      onClick={() => fetchYourInspectionsData(currentPage + 1)}
+                      disabled={currentPage >= totalPages}
+                      style={{
+                        padding: '8px 12px',
+                        border: '1px solid #d1d5db',
+                        borderRadius: '6px',
+                        backgroundColor: currentPage >= totalPages ? '#f9fafb' : 'white',
+                        color: currentPage >= totalPages ? '#9ca3af' : '#374151',
+                        cursor: currentPage >= totalPages ? 'not-allowed' : 'pointer',
+                        fontSize: '14px'
+                      }}
+                    >
+                      Next
+                    </button>
+                  </div>
+                )}
               </div>
-              
-              {/* Row 4 */}
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr 1fr',
-                gap: '20px',
-                padding: '12px',
-                alignItems: 'center',
-                borderBottom: '1px solid #f3f4f6'
-              }}>
-                <div style={{ fontSize: '14px', color: '#374151' }}>12/02/2025</div>
-                <div style={{ fontSize: '14px', color: '#374151' }}>Village name</div>
-                <div style={{ fontSize: '14px', color: '#374151' }}>GP name</div>
-                <div style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>76%</div>
-                <div style={{ fontSize: '14px', color: '#10b981', fontWeight: '500' }}>Yes</div>
-                <div style={{ fontSize: '14px', color: '#6b7280', cursor: 'pointer', textDecoration: 'underline' }}>Download report</div>
-              </div>
-              
-              {/* Row 5 */}
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr 1fr',
-                gap: '20px',
-                padding: '12px',
-                alignItems: 'center',
-                borderBottom: '1px solid #f3f4f6'
-              }}>
-                <div style={{ fontSize: '14px', color: '#374151' }}>12/02/2025</div>
-                <div style={{ fontSize: '14px', color: '#374151' }}>Village name</div>
-                <div style={{ fontSize: '14px', color: '#374151' }}>GP name</div>
-                <div style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>76%</div>
-                <div style={{ fontSize: '14px', color: '#10b981', fontWeight: '500' }}>Yes</div>
-                <div style={{ fontSize: '14px', color: '#6b7280', cursor: 'pointer', textDecoration: 'underline' }}>Download report</div>
-              </div>
-              
-              {/* Row 6 */}
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr 1fr',
-                gap: '20px',
-                padding: '12px',
-                alignItems: 'center'
-              }}>
-                <div style={{ fontSize: '14px', color: '#374151' }}>12/02/2025</div>
-                <div style={{ fontSize: '14px', color: '#374151' }}>Village name</div>
-                <div style={{ fontSize: '14px', color: '#374151' }}>GP name</div>
-                <div style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>76%</div>
-                <div style={{ fontSize: '14px', color: '#10b981', fontWeight: '500' }}>Yes</div>
-                <div style={{ fontSize: '14px', color: '#6b7280', cursor: 'pointer', textDecoration: 'underline' }}>Download report</div>
-              </div>
-            </div>
+            )}
           </div>
         </div>
       </div>
