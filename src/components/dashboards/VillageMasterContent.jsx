@@ -1,15 +1,567 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { MapPin, ChevronDown, Calendar, List, Info, Search, Filter, Download, Eye, Edit, Trash2, CheckCircle, XCircle, Clock, Users, UserCheck, UserX, DollarSign, Target, TrendingUp, Database, BarChart3, ArrowUpDown } from 'lucide-react';
 import Chart from 'react-apexcharts';
+import apiClient from '../../services/api';
 
 const VillageMasterContent = () => {
+    // Refs to prevent duplicate API calls
+    const hasFetchedInitialData = useRef(false);
+
+    // Location state management
+    const [activeScope, setActiveScope] = useState('State');
+    const [selectedLocation, setSelectedLocation] = useState('Rajasthan');
+    const [selectedLocationId, setSelectedLocationId] = useState(null);
+    const [selectedDistrictId, setSelectedDistrictId] = useState(null);
+    const [selectedBlockId, setSelectedBlockId] = useState(null);
+    const [selectedGPId, setSelectedGPId] = useState(null);
+    const [dropdownLevel, setDropdownLevel] = useState('districts');
+    const [selectedDistrictForHierarchy, setSelectedDistrictForHierarchy] = useState(null);
+    const [selectedBlockForHierarchy, setSelectedBlockForHierarchy] = useState(null);
+    
+    // UI controls state
+    const [showLocationDropdown, setShowLocationDropdown] = useState(false);
+    const [districts, setDistricts] = useState([]);
+    const [loadingDistricts, setLoadingDistricts] = useState(false);
+    const [blocks, setBlocks] = useState([]);
+    const [loadingBlocks, setLoadingBlocks] = useState(false);
+    const [gramPanchayats, setGramPanchayats] = useState([]);
+    const [loadingGPs, setLoadingGPs] = useState(false);
+
+    // Existing state
     const [activeFilter, setActiveFilter] = useState('All');
     const [searchTerm, setSearchTerm] = useState('');
-    const [activeScope, setActiveScope] = useState('State');
     const [activePerformance, setActivePerformance] = useState('Time');
+
+    // Annual Survey state
+    const [activeFyData, setActiveFyData] = useState([]);
+    const [loadingFy, setLoadingFy] = useState(false);
+
+    // Analytics state
+    const [analyticsData, setAnalyticsData] = useState(null);
+    const [loadingAnalytics, setLoadingAnalytics] = useState(false);
+    const [analyticsError, setAnalyticsError] = useState(null);
+
+    // Date selection state
+    const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+    const [selectedMonth, setSelectedMonth] = useState(null);
+    const [selectedDay, setSelectedDay] = useState(null);
+    const [showDateDropdown, setShowDateDropdown] = useState(false);
+    const [selectionStep, setSelectionStep] = useState('year');
+    
+    // Date range state
+    const [selectedDateRange, setSelectedDateRange] = useState('Today');
+    const [startDate, setStartDate] = useState(() => {
+        const today = new Date();
+        return today.toISOString().split('T')[0];
+    });
+    const [endDate, setEndDate] = useState(() => {
+        const today = new Date();
+        return today.toISOString().split('T')[0];
+    });
+    const [isCustomRange, setIsCustomRange] = useState(false);
   
     const scopeButtons = ['State', 'Districts', 'Blocks', 'GPs'];
     const performanceButtons = ['Time', 'Location'];
+
+    // Predefined date ranges
+    const dateRanges = [
+        { label: 'Today', value: 'today', days: 0 },
+        { label: 'Yesterday', value: 'yesterday', days: 1 },
+        { label: 'Last 7 Days', value: 'last7days', days: 7 },
+        { label: 'Last 30 Days', value: 'last30days', days: 30 },
+        { label: 'Last 60 Days', value: 'last60days', days: 60 },
+        { label: 'Custom', value: 'custom', days: null }
+    ];
+
+    // Months array
+    const months = [
+        { value: 1, name: 'January' },
+        { value: 2, name: 'February' },
+        { value: 3, name: 'March' },
+        { value: 4, name: 'April' },
+        { value: 5, name: 'May' },
+        { value: 6, name: 'June' },
+        { value: 7, name: 'July' },
+        { value: 8, name: 'August' },
+        { value: 9, name: 'September' },
+        { value: 10, name: 'October' },
+        { value: 11, name: 'November' },
+        { value: 12, name: 'December' }
+    ];
+
+    // Helper functions for location management
+    const trackTabChange = (scope) => {
+        console.log('Tab changed to:', scope);
+    };
+    
+    const trackDropdownChange = (location) => {
+        console.log('Dropdown changed to:', location);
+    };
+    
+    const updateLocationSelection = (scope, location, locationId, districtId, blockId, gpId, changeType) => {
+        console.log('🔄 updateLocationSelection called:', { scope, location, locationId, districtId, blockId, gpId, changeType });
+        setActiveScope(scope);
+        setSelectedLocation(location);
+        setSelectedLocationId(locationId);
+        setSelectedDistrictId(districtId);
+        setSelectedBlockId(blockId);
+        setSelectedGPId(gpId);
+        console.log('✅ Location state updated');
+    };
+
+    // Fetch districts from API
+    const fetchDistricts = async () => {
+        try {
+            setLoadingDistricts(true);
+            const response = await apiClient.get('/geography/districts?skip=0&limit=100');
+            console.log('Districts API Response:', response.data);
+            setDistricts(response.data);
+        } catch (error) {
+            console.error('Error fetching districts:', error);
+        } finally {
+            setLoadingDistricts(false);
+        }
+    };
+
+    // Fetch blocks from API
+    const fetchBlocks = async () => {
+        try {
+            setLoadingBlocks(true);
+            const response = await apiClient.get('/geography/blocks?skip=0&limit=100');
+            console.log('Blocks API Response:', response.data);
+            setBlocks(response.data);
+        } catch (error) {
+            console.error('Error fetching blocks:', error);
+        } finally {
+            setLoadingBlocks(false);
+        }
+    };
+
+    // Fetch gram panchayats from API
+    const fetchGramPanchayats = async () => {
+        try {
+            setLoadingGPs(true);
+            console.log('🔄 Fetching GPs...');
+            const response = await apiClient.get('/geography/grampanchayats?skip=0&limit=100');
+            console.log('✅ GPs API Response:', response.data);
+            console.log('📊 Number of GPs fetched:', response.data?.length || 0);
+            setGramPanchayats(response.data);
+        } catch (error) {
+            console.error('❌ Error fetching gram panchayats:', error);
+            setGramPanchayats([]);
+        } finally {
+            setLoadingGPs(false);
+        }
+    };
+
+    // Fetch active annual survey data
+    const fetchActiveAnnualSurveys = async () => {
+        try {
+            setLoadingFy(true);
+            console.log('🔄 Fetching active annual surveys...');
+            const response = await apiClient.get('/annual-surveys/fy/active');
+            console.log('✅ Active FY API Response:', response.data);
+            
+            // Store active FYs (where active is true)
+            const activeData = response.data.filter(item => item.active === true);
+            console.log('📊 Active FYs:', activeData);
+            setActiveFyData(activeData);
+            
+            // Log the stored data
+            activeData.forEach(item => {
+                console.log(`✅ Stored FY: ID=${item.id}, FY=${item.fy}`);
+            });
+        } catch (error) {
+            console.error('❌ Error fetching active annual surveys:', error);
+            setActiveFyData([]);
+        } finally {
+            setLoadingFy(false);
+        }
+    };
+
+    // Fetch analytics data (state or district level)
+    const fetchAnalytics = useCallback(async () => {
+        try {
+            setLoadingAnalytics(true);
+            setAnalyticsError(null);
+
+            console.log('🔄 ===== ANALYTICS API CALL =====');
+            console.log('📍 Current State:', {
+                activeScope,
+                selectedDistrictId,
+                selectedBlockId,
+                selectedGPId,
+                activeFyData
+            });
+
+            // Get the first active FY ID
+            const fyId = activeFyData.length > 0 ? activeFyData[0].id : null;
+            
+            if (!fyId) {
+                console.log('⚠️ No active FY ID available, skipping analytics call');
+                setAnalyticsError('No active financial year available');
+                return;
+            }
+
+            let url = '';
+
+            // Build URL based on active scope
+            if (activeScope === 'State') {
+                url = `/annual-surveys/analytics/state?fy_id=${fyId}`;
+                console.log('🏛️ Calling STATE analytics API');
+            } else if (activeScope === 'Districts' && selectedDistrictId) {
+                url = `/annual-surveys/analytics/district/${selectedDistrictId}?fy_id=${fyId}`;
+                console.log('🏙️ Calling DISTRICT analytics API');
+            } else if (activeScope === 'Blocks' && selectedBlockId) {
+                url = `/annual-surveys/analytics/block/${selectedBlockId}?fy_id=${fyId}`;
+                console.log('🏘️ Calling BLOCK analytics API');
+            } else if (activeScope === 'GPs' && selectedGPId) {
+                url = `/annual-surveys/analytics/gp/${selectedGPId}?fy_id=${fyId}`;
+                console.log('🏡 Calling GP analytics API');
+            } else {
+                console.log('⏸️ Waiting for location selection or FY data');
+                return;
+            }
+
+            console.log('🌐 Analytics API URL:', url);
+            console.log('📅 FY ID:', fyId);
+
+            const response = await apiClient.get(url);
+            
+            console.log('✅ Analytics API Response:', {
+                status: response.status,
+                data: response.data
+            });
+            
+            // Log annual_overview specifically
+            if (response.data) {
+                console.log('📊 Annual Overview Data:', response.data.annual_overview);
+                console.log('📈 Scheme Data:', response.data.scheme_wise_target_achievement);
+            }
+            
+            setAnalyticsData(response.data);
+            console.log('🔄 ===== END ANALYTICS API CALL =====\n');
+            
+        } catch (error) {
+            console.error('❌ ===== ANALYTICS API ERROR =====');
+            console.error('Error Type:', error.name);
+            console.error('Error Message:', error.message);
+            console.error('Error Details:', error.response?.data || error);
+            console.error('Status Code:', error.response?.status);
+            console.error('🔄 ===== END ANALYTICS API ERROR =====\n');
+            
+            setAnalyticsError(error.message || 'Failed to fetch analytics data');
+            setAnalyticsData(null);
+        } finally {
+            setLoadingAnalytics(false);
+        }
+    }, [activeScope, selectedDistrictId, selectedBlockId, selectedGPId, activeFyData]);
+
+    // Handle scope change
+    const handleScopeChange = async (scope) => {
+        console.log('Scope changed to:', scope);
+        trackTabChange(scope);
+        setActiveScope(scope);
+        setShowLocationDropdown(false);
+        
+        // Use updateLocationSelection for proper state management
+        if (scope === 'State') {
+            // State tab selected - will trigger state analytics API in useEffect
+            updateLocationSelection('State', 'Rajasthan', null, null, null, null, 'tab_change');
+            setDropdownLevel('districts');
+            setSelectedDistrictForHierarchy(null);
+            setSelectedBlockForHierarchy(null);
+            // Don't clear analytics data yet - let the useEffect handle it
+        } else if (scope === 'Districts') {
+            // Districts tab selected - will trigger district analytics API in useEffect
+            // Ensure districts are loaded first, then set first district as selected
+            if (districts.length === 0) {
+                console.log('⏳ Loading districts first...');
+                await fetchDistricts();
+                // Wait for districts to be loaded, then set first district
+                setTimeout(() => {
+                    if (districts.length > 0) {
+                        updateLocationSelection('Districts', districts[0].name, districts[0].id, districts[0].id, null, null, 'tab_change');
+                    }
+                }, 100);
+            } else {
+                updateLocationSelection('Districts', districts[0].name, districts[0].id, districts[0].id, null, null, 'tab_change');
+            }
+            fetchBlocks();
+            setDropdownLevel('districts');
+            setSelectedDistrictForHierarchy(null);
+            setSelectedBlockForHierarchy(null);
+        } else if (scope === 'Blocks') {
+            // Blocks tab selected - will trigger block analytics API in useEffect after block selection
+            // For blocks, ensure districts are loaded first
+            if (districts.length === 0) {
+                console.log('⏳ Loading districts first...');
+                await fetchDistricts();
+            }
+            // Then fetch blocks and GPs
+            fetchBlocks();
+            fetchGramPanchayats();
+            updateLocationSelection('Blocks', 'Select District', null, null, null, null, 'tab_change');
+            setDropdownLevel('districts');
+            setSelectedDistrictForHierarchy(null);
+            setSelectedBlockForHierarchy(null);
+        } else if (scope === 'GPs') {
+            // GPs tab selected - will trigger GP analytics API in useEffect after GP selection
+            // For GPs, ensure districts are loaded first
+            if (districts.length === 0) {
+                console.log('⏳ Loading districts first...');
+                await fetchDistricts();
+            }
+            // Then fetch blocks and GPs
+            fetchBlocks();
+            fetchGramPanchayats();
+            updateLocationSelection('GPs', 'Select District', null, null, null, null, 'tab_change');
+            setDropdownLevel('districts');
+            setSelectedDistrictForHierarchy(null);
+            setSelectedBlockForHierarchy(null);
+        }
+    };
+
+    // Get location options based on current scope and dropdown level
+    const getLocationOptions = () => {
+        if (activeScope === 'Districts') {
+            return districts;
+        } else if (activeScope === 'Blocks') {
+            if (dropdownLevel === 'districts') {
+                return districts;
+            } else if (dropdownLevel === 'blocks') {
+                return blocks.filter(block => block.district_id === selectedDistrictForHierarchy?.id);
+            }
+        } else if (activeScope === 'GPs') {
+            if (dropdownLevel === 'districts') {
+                return districts;
+            } else if (dropdownLevel === 'blocks') {
+                return blocks.filter(block => block.district_id === selectedDistrictForHierarchy?.id);
+            } else if (dropdownLevel === 'gps') {
+                const filteredGPs = gramPanchayats.filter(gp => gp.block_id === selectedBlockForHierarchy?.id);
+                console.log('🔍 Filtering GPs:', {
+                    totalGPs: gramPanchayats.length,
+                    selectedBlockId: selectedBlockForHierarchy?.id,
+                    filteredGPsCount: filteredGPs.length
+                });
+                return filteredGPs;
+            }
+        }
+        return [];
+    };
+
+    // Handle hierarchical selection for blocks and GPs
+    const handleHierarchicalSelection = (location) => {
+        if (activeScope === 'Blocks') {
+            if (dropdownLevel === 'districts') {
+                // District selected, now show blocks
+                setSelectedDistrictForHierarchy(location);
+                setDropdownLevel('blocks');
+                setSelectedLocation('Select Block');
+                fetchBlocks();
+            } else if (dropdownLevel === 'blocks') {
+                // Block selected
+                trackDropdownChange(location.name, location.id, selectedDistrictForHierarchy.id);
+                updateLocationSelection('Blocks', location.name, location.id, selectedDistrictForHierarchy.id, location.id, null, 'dropdown_change');
+                console.log('Selected block ID:', location.id, 'Name:', location.name, 'District ID:', selectedDistrictForHierarchy.id);
+                setShowLocationDropdown(false);
+            }
+        } else if (activeScope === 'GPs') {
+            if (dropdownLevel === 'districts') {
+                // District selected, now show blocks
+                setSelectedDistrictForHierarchy(location);
+                setDropdownLevel('blocks');
+                setSelectedLocation('Select Block');
+                fetchBlocks();
+            } else if (dropdownLevel === 'blocks') {
+                // Block selected, now show GPs
+                setSelectedBlockForHierarchy(location);
+                setDropdownLevel('gps');
+                setSelectedLocation('Select GP');
+                fetchGramPanchayats();
+            } else if (dropdownLevel === 'gps') {
+                // GP selected
+                trackDropdownChange(location.name, location.id, selectedBlockForHierarchy.id);
+                updateLocationSelection('GPs', location.name, location.id, selectedDistrictForHierarchy.id, selectedBlockForHierarchy.id, location.id, 'dropdown_change');
+                console.log('Selected GP ID:', location.id, 'Name:', location.name, 'Block ID:', selectedBlockForHierarchy.id, 'District ID:', selectedDistrictForHierarchy.id);
+                setShowLocationDropdown(false);
+            }
+        }
+    };
+
+    // Click outside handler
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (!event.target.closest('[data-location-dropdown]') && 
+                !event.target.closest('[data-date-dropdown]')) {
+                setShowLocationDropdown(false);
+                setShowDateDropdown(false);
+            }
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, []);
+
+    // Fetch districts and active FY data immediately when component loads
+    useEffect(() => {
+        // Prevent duplicate API calls (React StrictMode calls effects twice in development)
+        if (hasFetchedInitialData.current) {
+            console.log('⏸️ Initial data already fetched, skipping...');
+            return;
+        }
+
+        console.log('🔄 Fetching initial data (districts and active FY)...');
+        hasFetchedInitialData.current = true;
+        fetchDistricts();
+        fetchActiveAnnualSurveys();
+    }, []);
+
+    // Log active FY data when it changes
+    useEffect(() => {
+        if (activeFyData.length > 0) {
+            console.log('📅 Active FY Data stored in state:', activeFyData);
+            console.log('📅 Total active FYs:', activeFyData.length);
+            activeFyData.forEach((item, index) => {
+                console.log(`📅 FY ${index + 1}: ID=${item.id}, FY=${item.fy}, Active=${item.active}`);
+            });
+        }
+    }, [activeFyData]);
+
+    // Fetch analytics data when scope or district changes
+    useEffect(() => {
+        console.log('🔄 Analytics useEffect triggered:', {
+            activeScope,
+            selectedDistrictId,
+            selectedBlockId,
+            selectedGPId,
+            hasFyData: activeFyData.length > 0,
+            loadingAnalytics
+        });
+        
+        // Fetch for State scope when FY data is available
+        if (activeScope === 'State' && activeFyData.length > 0) {
+            console.log('📡 Calling state analytics API');
+            fetchAnalytics();
+        }
+        // Fetch for Districts scope when district is selected and FY data is available
+        else if (activeScope === 'Districts' && selectedDistrictId && activeFyData.length > 0) {
+            console.log('📡 Calling district analytics API');
+            fetchAnalytics();
+        }
+        // Fetch for Blocks scope when block is selected and FY data is available
+        else if (activeScope === 'Blocks' && selectedBlockId && activeFyData.length > 0) {
+            console.log('📡 Calling block analytics API');
+            fetchAnalytics();
+        }
+        // Fetch for GPs scope when GP is selected and FY data is available
+        else if (activeScope === 'GPs' && selectedGPId && activeFyData.length > 0) {
+            console.log('📡 Calling GP analytics API');
+            fetchAnalytics();
+        }
+    }, [activeScope, selectedDistrictId, selectedBlockId, selectedGPId, activeFyData, fetchAnalytics]);
+
+    // Date selection helper functions
+    const generateYears = () => {
+        const currentYear = new Date().getFullYear();
+        return Array.from({ length: 6 }, (_, i) => currentYear - i);
+    };
+
+    const generateDays = () => {
+        const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
+        return Array.from({ length: daysInMonth }, (_, i) => i + 1);
+    };
+
+    // Get display text based on selected date range
+    const getDateDisplayText = () => {
+        if (isCustomRange && startDate && endDate) {
+            const start = new Date(startDate);
+            const end = new Date(endDate);
+            return `${start.getDate()}/${start.getMonth() + 1}/${start.getFullYear()} - ${end.getDate()}/${end.getMonth() + 1}/${end.getFullYear()}`;
+        } else if (isCustomRange && startDate) {
+            const start = new Date(startDate);
+            return `${start.getDate()}/${start.getMonth() + 1}/${start.getFullYear()} - Select End Date`;
+        } else {
+            return selectedDateRange;
+        }
+    };
+
+    // Toggle date dropdown on click
+    const handleCalendarClick = () => {
+        setShowDateDropdown(!showDateDropdown);
+    };
+
+    // Handle predefined date range selection
+    const handleDateRangeSelection = (range) => {
+        if (range.value === 'custom') {
+            setIsCustomRange(true);
+            setSelectedDateRange('Custom');
+            setStartDate(null);
+            setEndDate(null);
+        } else {
+            setIsCustomRange(false);
+            setSelectedDateRange(range.label);
+            
+            const today = new Date();
+            
+            if (range.value === 'today') {
+                setStartDate(today.toISOString().split('T')[0]);
+                setEndDate(today.toISOString().split('T')[0]);
+            } else if (range.value === 'yesterday') {
+                const yesterday = new Date(today);
+                yesterday.setDate(today.getDate() - 1);
+                setStartDate(yesterday.toISOString().split('T')[0]);
+                setEndDate(yesterday.toISOString().split('T')[0]);
+            } else {
+                const start = new Date(today);
+                start.setDate(today.getDate() - range.days);
+                setStartDate(start.toISOString().split('T')[0]);
+                setEndDate(today.toISOString().split('T')[0]);
+            }
+            
+            setShowDateDropdown(false);
+        }
+    };
+
+    // Helper function to format numbers
+    const formatNumber = (num) => {
+        if (num === null || num === undefined || isNaN(num)) return '0';
+        return num.toLocaleString('en-IN');
+    };
+
+    // Helper function to format currency
+    const formatCurrency = (amount) => {
+        if (amount === null || amount === undefined || isNaN(amount)) return '0';
+        if (amount >= 10000000) {
+            return `₹${(amount / 10000000).toFixed(1)} Cr`;
+        } else if (amount >= 100000) {
+            return `₹${(amount / 100000).toFixed(1)} L`;
+        }
+        return `₹${amount.toLocaleString('en-IN')}`;
+    };
+
+    // Helper function to get analytics data with defaults
+    const getAnalyticsValue = (key, defaultValue = 0) => {
+        if (!analyticsData) return defaultValue;
+        const value = analyticsData[key];
+        return value !== null && value !== undefined ? value : defaultValue;
+    };
+
+    // Process scheme-wise target achievement data for the chart
+    const schemeData = analyticsData?.scheme_wise_target_achievement || [];
+    const chartCategories = schemeData.map(item => item.scheme_name || item.scheme_code);
+    const targetData = schemeData.map(item => item.target || 0);
+    const achievementData = schemeData.map(item => item.achievement || 0);
+    
+    // Calculate max value for y-axis (with some padding)
+    const maxValue = Math.max(
+      ...targetData,
+      ...achievementData,
+      100
+    );
+    const yAxisMax = maxValue > 0 ? Math.ceil(maxValue * 1.2 / 10) * 10 : 100;
 
     // Chart data for SBMG Target vs Achievement
     const chartOptions = {
@@ -28,14 +580,14 @@ const VillageMasterContent = () => {
       dataLabels: { enabled: false },
       stroke: { show: false },
       xaxis: {
-        categories: ['IHHL', 'CSC', 'RRC', 'PWMU', 'Soak pit', 'Magic pit', 'Leach pit', 'WSP', 'DEWATS'],
+        categories: chartCategories.length > 0 ? chartCategories : ['IHHL', 'CSC', 'RRC', 'PWMU', 'Soak pit', 'Magic pit', 'Leach pit', 'WSP', 'DEWATS'],
         axisBorder: { show: false },
         axisTicks: { show: false },
         labels: { style: { colors: '#6b7280', fontSize: '12px' } }
       },
       yaxis: {
         min: 0,
-        max: 100,
+        max: yAxisMax,
         tickAmount: 5,
         labels: { style: { colors: '#6b7280', fontSize: '12px' } },
         axisBorder: { show: false }
@@ -55,76 +607,15 @@ const VillageMasterContent = () => {
     const chartSeries = [
       {
         name: 'Target',
-        data: [8, 8, 8, 53, 53, 53, 53, 53, 53]
+        data: targetData.length > 0 ? targetData : [0, 0, 0, 0, 0, 0, 0, 0, 0]
       },
       {
         name: 'Achievement',
-        data: [23, 12, 12, 64, 42, 42, 42, 42, 42]
+        data: achievementData.length > 0 ? achievementData : [0, 0, 0, 0, 0, 0, 0, 0, 0]
       }
     ];
 
-    // Line chart data for Statewide Score trend
-    const lineChartOptions = {
-      chart: {
-        type: 'line',
-        toolbar: { show: false },
-        background: 'transparent'
-      },
-      stroke: {
-        curve: 'smooth',
-        width: 3,
-        colors: ['#10b981']
-      },
-      markers: {
-        size: 0,
-        hover: { size: 6 }
-      },
-      xaxis: {
-        categories: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
-        axisBorder: { show: false },
-        axisTicks: { show: false },
-        labels: { style: { colors: '#6b7280', fontSize: '12px' } }
-      },
-      yaxis: {
-        min: 0,
-        max: 100,
-        tickAmount: 5,
-        labels: { style: { colors: '#6b7280', fontSize: '12px' } },
-        axisBorder: { show: false }
-      },
-      grid: {
-        borderColor: '#e5e7eb',
-        strokeDashArray: 3,
-        xaxis: { lines: { show: false } },
-        yaxis: { lines: { show: true } }
-      },
-      colors: ['#10b981'],
-      dataLabels: { enabled: false },
-      annotations: {
-        points: [{
-          x: 'Jun',
-          y: 42,
-          marker: {
-            size: 0
-          },
-          label: {
-            text: '40%',
-            style: {
-              background: '#000000',
-              color: '#ffffff',
-              fontSize: '12px',
-              padding: {
-                left: 8,
-                right: 8,
-                top: 4,
-                bottom: 4
-              }
-            },
-            offsetY: -20
-          }
-        }]
-      }
-    };
+  
 
     const lineChartSeries = [{
       name: 'Score',
@@ -173,7 +664,7 @@ const VillageMasterContent = () => {
             {scopeButtons.map((scope) => (
               <button
                 key={scope}
-                onClick={() => setActiveScope(scope)}
+                onClick={() => handleScopeChange(scope)}
                 style={{
                   padding: '3px 10px',
                   borderRadius: '8px',
@@ -191,30 +682,160 @@ const VillageMasterContent = () => {
             ))}
           </div>
   {/* Location dropdown */}
-  <div style={{
+  <div 
+    data-location-dropdown
+    style={{
             position: 'relative',
             minWidth: '200px'
-          }}>
-            <button style={{
+    }}
+  >
+    <button 
+      onClick={() => activeScope !== 'State' && setShowLocationDropdown(!showLocationDropdown)}
+      disabled={activeScope === 'State'}
+      style={{
               width: '100%',
               padding: '5px 12px',
               border: '1px solid #d1d5db',
               borderRadius: '10px',
-              backgroundColor: 'white',
+        backgroundColor: activeScope === 'State' ? '#f9fafb' : 'white',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              cursor: 'pointer',
+        cursor: activeScope === 'State' ? 'not-allowed' : 'pointer',
               fontSize: '14px',
-              color: '#6b7280'
-            }}>
+        color: activeScope === 'State' ? '#9ca3af' : '#6b7280',
+        opacity: activeScope === 'State' ? 0.6 : 1
+      }}
+    >
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <MapPin style={{ width: '16px', height: '16px', color: '#9ca3af' }} />
-                <span>Select option</span>
+        <span>{selectedLocation}</span>
               </div>
-              <ChevronDown style={{ width: '16px', height: '16px', color: '#9ca3af' }} />
+      <ChevronDown style={{ 
+        width: '16px', 
+        height: '16px', 
+        color: activeScope === 'State' ? '#d1d5db' : '#9ca3af' 
+      }} />
             </button>
+    
+    {/* Location Dropdown Menu */}
+    {showLocationDropdown && activeScope !== 'State' && (
+      <div 
+        key={`dropdown-${activeScope}`}
+        style={{
+          position: 'absolute',
+          top: '100%',
+          left: 0,
+          right: 0,
+          backgroundColor: 'white',
+          border: '1px solid #d1d5db',
+          borderRadius: '8px',
+          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+          zIndex: 1000,
+          marginTop: '4px',
+          maxHeight: '200px',
+          overflowY: 'auto'
+        }}
+      >
+        {/* Breadcrumb/Back button for hierarchical navigation */}
+        {((activeScope === 'Blocks' && dropdownLevel === 'blocks') || 
+          (activeScope === 'GPs' && (dropdownLevel === 'blocks' || dropdownLevel === 'gps'))) && (
+          <div style={{
+            padding: '8px 12px',
+            borderBottom: '1px solid #f3f4f6',
+            backgroundColor: '#f9fafb',
+            cursor: 'pointer',
+            fontSize: '14px',
+            color: '#6b7280',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}
+          onClick={() => {
+            if (activeScope === 'Blocks' && dropdownLevel === 'blocks') {
+              setDropdownLevel('districts');
+              setSelectedDistrictForHierarchy(null);
+              setSelectedLocation('Select District');
+            } else if (activeScope === 'GPs' && dropdownLevel === 'blocks') {
+              setDropdownLevel('districts');
+              setSelectedDistrictForHierarchy(null);
+              setSelectedLocation('Select District');
+            } else if (activeScope === 'GPs' && dropdownLevel === 'gps') {
+              setDropdownLevel('blocks');
+              setSelectedBlockForHierarchy(null);
+              setSelectedLocation('Select Block');
+            }
+          }}>
+            <span>←</span>
+            <span>
+              {activeScope === 'Blocks' && dropdownLevel === 'blocks' ? 'Back to Districts' :
+               activeScope === 'GPs' && dropdownLevel === 'blocks' ? 'Back to Districts' :
+               activeScope === 'GPs' && dropdownLevel === 'gps' ? 'Back to Blocks' : ''}
+            </span>
           </div>
+        )}
+        
+        {/* Level indicator */}
+        {((activeScope === 'Blocks' && dropdownLevel !== 'districts') || 
+          (activeScope === 'GPs' && dropdownLevel !== 'districts')) && (
+          <div style={{
+            padding: '8px 12px',
+            backgroundColor: '#f3f4f6',
+            fontSize: '12px',
+            color: '#6b7280',
+            fontWeight: '500',
+            borderBottom: '1px solid #e5e7eb'
+          }}>
+            {activeScope === 'Blocks' && dropdownLevel === 'blocks' ? 
+              `Blocks in ${selectedDistrictForHierarchy?.name}` :
+             activeScope === 'GPs' && dropdownLevel === 'blocks' ? 
+              `Blocks in ${selectedDistrictForHierarchy?.name}` :
+             activeScope === 'GPs' && dropdownLevel === 'gps' ? 
+              `GPs in ${selectedBlockForHierarchy?.name}` : ''}
+          </div>
+        )}
+        
+        {(loadingDistricts && activeScope === 'Districts') || (loadingBlocks && activeScope === 'Blocks') || (loadingGPs && activeScope === 'GPs') ? (
+          <div style={{
+            padding: '8px 12px',
+            fontSize: '14px',
+            color: '#6b7280',
+            textAlign: 'center'
+          }}>
+            Loading {activeScope.toLowerCase()}...
+          </div>
+        ) : (
+          getLocationOptions().map((location, index) => (
+            <div
+              key={`${activeScope}-${location.id}`}
+              onClick={() => {
+                if (activeScope === 'Districts') {
+                  // Direct selection for districts
+                  trackDropdownChange(location.name, location.id, location.id);
+                  updateLocationSelection('Districts', location.name, location.id, location.id, null, null, 'dropdown_change');
+                  console.log('Selected district ID:', location.id, 'Name:', location.name);
+                  setShowLocationDropdown(false);
+                } else if (activeScope === 'Blocks' || activeScope === 'GPs') {
+                  // Use hierarchical selection for blocks and GPs
+                  handleHierarchicalSelection(location);
+                }
+              }}
+              style={{
+                padding: '8px 12px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                color: '#374151',
+                backgroundColor: selectedLocation === location.name ? '#f3f4f6' : 'transparent',
+                borderBottom: index < getLocationOptions().length - 1 ? '1px solid #f3f4f6' : 'none'
+              }}
+            >
+              {location.name}
+            </div>
+          ))
+        )}
+      </div>
+    )}
+  </div>
         </div>
       </div>
 
@@ -227,7 +848,7 @@ const VillageMasterContent = () => {
           color: '#6B7280',
           fontWeight: '600'
         }}>
-          Rajasthan / All
+          {activeScope === 'State' ? selectedLocation : `Rajasthan / ${selectedLocation}`}
         </span>
       </div>
 
@@ -263,19 +884,238 @@ const VillageMasterContent = () => {
             </h2>
            
           </div>
-          <div style={{
+          <div 
+            onClick={handleCalendarClick}
+            data-date-dropdown
+            style={{
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
-            backgroundColor: 'white',
+              color: '#6b7280',
+              fontSize: '14px',
             padding: '8px 12px',
+              border: '1px solid #d1d5db',
             borderRadius: '8px',
-            border: '1px solid #e5e7eb',
-            cursor: 'pointer'
-          }}>
-            <Calendar style={{ width: '16px', height: '16px', color: '#6b7280' }} />
-            <span style={{ fontSize: '14px', color: '#374151', fontWeight: '500' }}>2024</span>
-            <ChevronDown style={{ width: '14px', height: '14px', color: '#6b7280' }} />
+              backgroundColor: 'white',
+              cursor: 'pointer',
+              position: 'relative',
+              transition: 'all 0.2s'
+            }}
+          >
+            <Calendar style={{ width: '16px', height: '16px' }} />
+            <span>{getDateDisplayText()}</span>
+            <ChevronDown style={{ width: '16px', height: '16px' }} />
+            
+            {/* Modern Date Range Picker */}
+            {/* {showDateDropdown && (
+              <div 
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  position: 'absolute',
+                  top: '100%',
+                  right: '0',
+                  backgroundColor: 'white',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '12px',
+                  boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)',
+                  zIndex: 1000,
+                  marginTop: '8px',
+                  width: '600px',
+                  maxWidth: '90vw',
+                  display: 'flex',
+                  overflow: 'hidden'
+                }}
+              >
+                <div style={{
+                  width: '200px',
+                  backgroundColor: '#f8fafc',
+                  borderRight: '1px solid #e2e8f0',
+                  padding: '16px 0'
+                }}>
+                  <div style={{ padding: '0 16px 12px', borderBottom: '1px solid #e2e8f0' }}>
+                    <h3 style={{ 
+                      margin: 0, 
+                      fontSize: '14px', 
+                      fontWeight: '600', 
+                      color: '#1e293b' 
+                    }}>
+                      Quick Select
+                    </h3>
+                  </div>
+
+                  {dateRanges.map((range, index) => (
+                    <div
+                      key={range.value}
+                      onClick={() => handleDateRangeSelection(range)}
+                      style={{
+                        padding: '12px 16px',
+                        cursor: 'pointer',
+                        fontSize: '14px',
+                        color: range.value === 'custom' ? '#10b981' : '#475569',
+                        backgroundColor: selectedDateRange === range.label ? '#f0fdf4' : 'transparent',
+                        borderLeft: selectedDateRange === range.label ? '3px solid #10b981' : '3px solid transparent',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      {range.label}
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{
+                  flex: 1,
+                  padding: '16px',
+                  minHeight: '300px'
+                }}>
+                  {isCustomRange ? (
+                    <div>
+                      <h3 style={{ 
+                        margin: '0 0 16px 0', 
+                        fontSize: '14px', 
+                        fontWeight: '600', 
+                        color: '#1e293b' 
+                      }}>
+                        Select Date Range
+                      </h3>
+                      
+                      <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
+                        <div>
+                          <label style={{ 
+                            display: 'block', 
+                            fontSize: '12px', 
+                            color: '#64748b', 
+                            marginBottom: '4px' 
+                          }}>
+                            Start Date
+                          </label>
+                          <input
+                            type="date"
+                            value={startDate || ''}
+                            onChange={(e) => setStartDate(e.target.value)}
+                            style={{
+                              padding: '8px 12px',
+                              border: '1px solid #d1d5db',
+                              borderRadius: '6px',
+                              fontSize: '14px',
+                              width: '140px'
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ 
+                            display: 'block', 
+                            fontSize: '12px',
+                            color: '#64748b', 
+                            marginBottom: '4px' 
+                          }}>
+                            End Date
+                          </label>
+                          <input
+                            type="date"
+                            value={endDate || ''}
+                            onChange={(e) => setEndDate(e.target.value)}
+                            style={{
+                              padding: '8px 12px',
+                              border: '1px solid #d1d5db',
+                              borderRadius: '6px',
+                              fontSize: '14px',
+                              width: '140px'
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      <div style={{ 
+                        display: 'flex', 
+                        gap: '8px', 
+                        justifyContent: 'flex-end'
+                      }}>
+                        <button
+                          onClick={() => {
+                            const today = new Date();
+                            const todayStr = today.toISOString().split('T')[0];
+                            setStartDate(todayStr);
+                            setEndDate(todayStr);
+                            setIsCustomRange(false);
+                            setSelectedDateRange('Today');
+                          }}
+                          style={{
+                            padding: '8px 16px',
+                            border: '1px solid #d1d5db',
+                            borderRadius: '6px',
+                            backgroundColor: '#f9fafb',
+                            color: '#6b7280',
+                            fontSize: '14px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Cancel
+                        </button>
+                        
+                        <button
+                          onClick={() => setShowDateDropdown(false)}
+                          disabled={!startDate || !endDate}
+                          style={{
+                            padding: '8px 16px',
+                            backgroundColor: startDate && endDate ? '#10b981' : '#d1d5db',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '6px',
+                            fontSize: '14px',
+                            cursor: startDate && endDate ? 'pointer' : 'not-allowed'
+                          }}
+                        >
+                          Apply
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <h3 style={{ 
+                        margin: '0 0 16px 0', 
+                        fontSize: '14px', 
+                        fontWeight: '600', 
+                        color: '#1e293b' 
+                      }}>
+                        Selected Range
+                      </h3>
+                      
+                      <div style={{
+                        padding: '12px',
+                        backgroundColor: '#f0fdf4',
+                        border: '1px solid #bbf7d0',
+                        borderRadius: '6px',
+                        marginBottom: '16px'
+                      }}>
+                        <div style={{ fontSize: '14px', color: '#166534', fontWeight: '500' }}>
+                          {selectedDateRange}
+                        </div>
+                        {startDate && endDate && (
+                          <div style={{ fontSize: '12px', color: '#16a34a', marginTop: '4px' }}>
+                            {new Date(startDate).toLocaleDateString()} - {new Date(endDate).toLocaleDateString()}
+                          </div>
+                        )}
+                      </div>
+                      
+                      <button
+                        onClick={() => setShowDateDropdown(false)}
+                        style={{
+                          padding: '8px 16px',
+                          backgroundColor: '#10b981',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '6px',
+                          fontSize: '14px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Apply
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )} */}
           </div>
         </div>
 
@@ -311,11 +1151,20 @@ const VillageMasterContent = () => {
             <div style={{
               fontSize: '24px',
               fontWeight: '700',
-              color: '#111827',
+              color: analyticsError ? '#ef4444' : '#111827',
               margin: 0
             }}>
-              2,400
+              {loadingAnalytics ? '...' : formatNumber(getAnalyticsValue('total_village_master_data', 0))}
             </div>
+            {analyticsError && (
+              <div style={{
+                fontSize: '12px',
+                color: '#ef4444',
+                marginTop: '4px'
+              }}>
+                {analyticsError}
+              </div>
+            )}
           </div>
 
           {/* Village Master Data Coverage */}
@@ -345,10 +1194,10 @@ const VillageMasterContent = () => {
             <div style={{
               fontSize: '24px',
               fontWeight: '700',
-              color: '#111827',
+              color: analyticsError ? '#ef4444' : '#111827',
               margin: 0
             }}>
-              68%
+              {loadingAnalytics ? '...' : `${getAnalyticsValue('village_master_data_coverage_percentage', 0)}%`}
             </div>
           </div>
 
@@ -379,10 +1228,10 @@ const VillageMasterContent = () => {
             <div style={{
               fontSize: '24px',
               fontWeight: '700',
-              color: '#111827',
+              color: analyticsError ? '#ef4444' : '#111827',
               margin: 0
             }}>
-              18 Cr
+              {loadingAnalytics ? '...' : formatCurrency(getAnalyticsValue('total_funds_sanctioned', 0))}
             </div>
           </div>
 
@@ -416,10 +1265,10 @@ const VillageMasterContent = () => {
             <div style={{
               fontSize: '24px',
               fontWeight: '700',
-              color: '#111827',
+              color: analyticsError ? '#ef4444' : '#111827',
               margin: 0
             }}>
-              13 Cr
+              {loadingAnalytics ? '...' : formatCurrency(getAnalyticsValue('total_work_order_amount', 0))}
             </div>
           </div>
 
@@ -450,10 +1299,10 @@ const VillageMasterContent = () => {
             <div style={{
               fontSize: '24px',
               fontWeight: '700',
-              color: '#111827',
+              color: analyticsError ? '#ef4444' : '#111827',
               margin: 0
             }}>
-              56%
+              {loadingAnalytics ? '...' : `${getAnalyticsValue('sbmg_target_achievement_rate', 0)}%`}
             </div>
           </div>
         </div>
@@ -573,7 +1422,9 @@ const VillageMasterContent = () => {
                 borderBottom: '1px solid #e5e7eb'
               }}>
                 <span style={{ fontSize: '16px', color: '#6b7280' }}>Fund Utilization rate</span>
-                <span style={{ fontSize: '18px', fontWeight: '700', color: '#111827' }}>95.5%</span>
+                <span style={{ fontSize: '18px', fontWeight: '700', color: '#111827' }}>
+                  {loadingAnalytics ? '...' : (analyticsData?.annual_overview?.fund_utilization_rate !== undefined && analyticsData?.annual_overview?.fund_utilization_rate !== null ? `${analyticsData.annual_overview.fund_utilization_rate}%` : analyticsData?.fund_utilization_rate !== undefined && analyticsData?.fund_utilization_rate !== null ? `${analyticsData.fund_utilization_rate}%` : '0%')}
+                </span>
               </div>
 
               {/* Average Cost Per Household */}
@@ -585,7 +1436,9 @@ const VillageMasterContent = () => {
                 borderBottom: '1px solid #e5e7eb'
               }}>
                 <span style={{ fontSize: '16px', color: '#6b7280' }}>Average Cost Per Household(D2D)</span>
-                <span style={{ fontSize: '18px', fontWeight: '700', color: '#111827' }}>₹98</span>
+                <span style={{ fontSize: '18px', fontWeight: '700', color: '#111827' }}>
+                  {loadingAnalytics ? '...' : (analyticsData?.annual_overview?.average_cost_per_household_d2d !== undefined && analyticsData?.annual_overview?.average_cost_per_household_d2d !== null ? `₹${formatNumber(analyticsData.annual_overview.average_cost_per_household_d2d)}` : '₹0')}
+                </span>
               </div>
 
               {/* Household covered */}
@@ -597,7 +1450,9 @@ const VillageMasterContent = () => {
                 borderBottom: '1px solid #e5e7eb'
               }}>
                 <span style={{ fontSize: '16px', color: '#6b7280' }}>Household covered (D2D)</span>
-                <span style={{ fontSize: '18px', fontWeight: '700', color: '#111827' }}>1.2 M</span>
+                <span style={{ fontSize: '18px', fontWeight: '700', color: '#111827' }}>
+                  {loadingAnalytics ? '...' : (analyticsData?.annual_overview?.households_covered_d2d !== undefined && analyticsData?.annual_overview?.households_covered_d2d !== null ? formatNumber(analyticsData.annual_overview.households_covered_d2d) : analyticsData?.households_covered_d2d !== undefined && analyticsData?.households_covered_d2d !== null ? formatNumber(analyticsData.households_covered_d2d) : '0')}
+                </span>
               </div>
 
               {/* GPs with Identified Asset Gaps */}
@@ -609,7 +1464,9 @@ const VillageMasterContent = () => {
                 borderBottom: '1px solid #e5e7eb'
               }}>
                 <span style={{ fontSize: '16px', color: '#6b7280' }}>GPs with Identified Asset Gaps</span>
-                <span style={{ fontSize: '18px', fontWeight: '700', color: '#111827' }}>35</span>
+                <span style={{ fontSize: '18px', fontWeight: '700', color: '#111827' }}>
+                  {loadingAnalytics ? '...' : (analyticsData?.annual_overview?.gps_with_asset_gaps !== undefined && analyticsData?.annual_overview?.gps_with_asset_gaps !== null ? formatNumber(analyticsData.annual_overview.gps_with_asset_gaps) : '0')}
+                </span>
               </div>
 
               {/* Active Sanitation Bidders */}
@@ -619,7 +1476,9 @@ const VillageMasterContent = () => {
                 alignItems: 'center'
               }}>
                 <span style={{ fontSize: '16px', color: '#6b7280' }}>Active Sanitation Bidders</span>
-                <span style={{ fontSize: '18px', fontWeight: '700', color: '#111827' }}>12</span>
+                <span style={{ fontSize: '18px', fontWeight: '700', color: '#111827' }}>
+                  {loadingAnalytics ? '...' : (analyticsData?.annual_overview?.active_sanitation_bidders !== undefined && analyticsData?.annual_overview?.active_sanitation_bidders !== null ? formatNumber(analyticsData.annual_overview.active_sanitation_bidders) : '0')}
+                </span>
               </div>
             </div>
           </div>
@@ -628,19 +1487,15 @@ const VillageMasterContent = () => {
        
       </div>
 
-  {/* Statewide Score Trend Section */}
-  <div style={{
-          display: 'flex',
-          gap: '14px',
-          marginLeft: '16px',
-          marginRight: '16px',
-          marginTop: '16px'
-        }}>
-          {/* First Chart */}
+
+        {/* Coverage Table Section - Only for State, Districts, and Blocks */}
+        {activeScope !== 'GPs' && (
           <div style={{
-            flex: 1,
             backgroundColor: 'white',
             padding: '14px',
+            marginLeft: '16px',
+            marginRight: '16px',
+            marginTop: '16px',
             borderRadius: '8px',
             border: '1px solid lightgray'
           }}>
@@ -651,206 +1506,154 @@ const VillageMasterContent = () => {
               margin: 0,
               marginBottom: '12px'
             }}>
-              Statewide Score trend
+              {activeScope === 'State' ? 'District' : activeScope === 'Districts' ? 'Block' : 'GP'} Wise Coverage
             </h3>
-            <divider />
-            <div style={{
-              height: '1px',
-              backgroundColor: '#e5e7eb',
-              margin: '2px 0'
-            }}></div>
-            <divider />
-            <div style={{ height: '300px' }}>
-              <Chart
-                options={lineChartOptions}
-                series={lineChartSeries}
-                type="line"
-                height="100%"
-              />
-            </div>
+
+            {/* Table */}
+            {(() => {
+              const coverageData = activeScope === 'State' 
+                ? analyticsData?.district_wise_coverage || []
+                : activeScope === 'Districts'
+                ? analyticsData?.block_wise_coverage || []
+                : analyticsData?.gp_wise_coverage || [];
+              
+              if (coverageData.length === 0) {
+                return (
+                  <div style={{
+                    padding: '40px',
+                    textAlign: 'center',
+                    color: '#9ca3af',
+                    fontSize: '14px'
+                  }}>
+                    {loadingAnalytics ? 'Loading...' : 'No coverage data available'}
+                  </div>
+                );
+              }
+
+              return (
+                <div style={{
+                  borderRadius: '8px',
+                  border: '1px solid #e5e7eb',
+                  overflow: 'hidden'
+                }}>
+                  <div style={{ 
+                    minWidth: '600px',
+                    maxHeight: '500px',
+                    overflowY: 'auto',
+                    overflowX: 'auto'
+                  }}>
+                    {/* Table Header - Sticky */}
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: '2fr 1fr 1fr 1fr 1.5fr',
+                      backgroundColor: '#f9fafb',
+                      padding: '12px 16px',
+                      borderBottom: '1px solid #e5e7eb',
+                      position: 'sticky',
+                      top: 0,
+                      zIndex: 10
+                    }}>
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        color: '#374151'
+                      }}>
+                        {activeScope === 'State' ? 'District' : activeScope === 'Districts' ? 'Block' : 'GP'} Name
+                        <ArrowUpDown style={{ width: '14px', height: '14px', color: '#9ca3af' }} />
+                      </div>
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        color: '#374151'
+                      }}>
+                        Total {activeScope === 'State' || activeScope === 'Districts' ? 'GPs' : 'Villages'}
+                        <ArrowUpDown style={{ width: '14px', height: '14px', color: '#9ca3af' }} />
+                      </div>
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        color: '#374151'
+                      }}>
+                        {activeScope === 'State' || activeScope === 'Districts' ? 'GPs' : 'Villages'} with Data
+                        <ArrowUpDown style={{ width: '14px', height: '14px', color: '#9ca3af' }} />
+                      </div>
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        color: '#374151'
+                      }}>
+                        Coverage %
+                        <ArrowUpDown style={{ width: '14px', height: '14px', color: '#9ca3af' }} />
+                      </div>
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        color: '#374151'
+                      }}>
+                        Status
+                        <ArrowUpDown style={{ width: '14px', height: '14px', color: '#9ca3af' }} />
+                      </div>
+                    </div>
+
+                    {/* Table Rows */}
+                    {coverageData.map((item, index) => (
+                      <div key={item.geography_id || index} style={{
+                        display: 'grid',
+                        gridTemplateColumns: '2fr 1fr 1fr 1fr 1.5fr',
+                        padding: '12px 16px',
+                        borderBottom: index < coverageData.length - 1 ? '1px solid #e5e7eb' : 'none',
+                        backgroundColor: 'white',
+                        transition: 'background-color 0.2s'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f9fafb'}
+                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
+                      >
+                        <div style={{ fontSize: '14px', color: '#111827', fontWeight: '500' }}>
+                          {item.geography_name}
+                        </div>
+                        <div style={{ fontSize: '14px', color: '#111827' }}>
+                          {formatNumber(item.total_gps || 0)}
+                        </div>
+                        <div style={{ fontSize: '14px', color: '#111827' }}>
+                          {formatNumber(item.gps_with_data || 0)}
+                        </div>
+                        <div style={{ fontSize: '14px', color: '#111827' }}>
+                          {item.coverage_percentage ? `${item.coverage_percentage}%` : '0%'}
+                        </div>
+                        <div style={{ fontSize: '14px', color: '#111827' }}>
+                          <span style={{
+                            padding: '4px 8px',
+                            borderRadius: '4px',
+                            backgroundColor: item.master_data_status === 'Available' ? '#d1fae5' : '#fee2e2',
+                            color: item.master_data_status === 'Available' ? '#065f46' : '#991b1b',
+                            fontSize: '12px'
+                          }}>
+                            {item.master_data_status || 'Not Available'}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
-
-          {/* Second Chart */}
-          <div style={{
-            flex: 1,
-            backgroundColor: 'white',
-            padding: '14px',
-            borderRadius: '8px',
-            border: '1px solid lightgray'
-          }}>
-            <h3 style={{
-              fontSize: '18px',
-              fontWeight: '600',
-              color: '#111827',
-              margin: 0,
-              marginBottom: '12px'
-            }}>
-              Statewide Score trend
-            </h3>
-            <divider />
-            <div style={{
-              height: '1px',
-              backgroundColor: '#e5e7eb',
-              margin: '12px 0'
-            }}></div>
-            <divider />
-            <div style={{ height: '300px' }}>
-              <Chart
-                options={lineChartOptions}
-                series={lineChartSeries}
-                type="line"
-                height="100%"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Financial Efficiency Table Section */}
-        <div style={{
-          backgroundColor: 'white',
-          padding: '14px',
-          marginLeft: '16px',
-          marginRight: '16px',
-          marginTop: '16px',
-          borderRadius: '8px',
-          border: '1px solid lightgray'
-        }}>
-          <h3 style={{
-            fontSize: '18px',
-            fontWeight: '600',
-            color: '#111827',
-            margin: 0,
-            marginBottom: '12px'
-          }}>
-            Financial Efficiency (Cost vs. Service)
-          </h3>
-
-          {/* Table */}
-          <div style={{
-            overflow: 'hidden',
-            borderRadius: '8px',
-            border: '1px solid #e5e7eb'
-          }}>
-            {/* Table Header */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr 1fr 1fr',
-              backgroundColor: '#f9fafb',
-              padding: '12px 16px',
-              borderBottom: '1px solid #e5e7eb'
-            }}>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                fontSize: '14px',
-                fontWeight: '600',
-                color: '#374151'
-              }}>
-                District
-                <ArrowUpDown style={{ width: '14px', height: '14px', color: '#9ca3af' }} />
-              </div>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                fontSize: '14px',
-                fontWeight: '600',
-                color: '#374151'
-              }}>
-                Avg. Cost / Household (₹)
-                <ArrowUpDown style={{ width: '14px', height: '14px', color: '#9ca3af' }} />
-              </div>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                fontSize: '14px',
-                fontWeight: '600',
-                color: '#374151'
-              }}>
-                Avg. Cost / km Drain (₹)
-                <ArrowUpDown style={{ width: '14px', height: '14px', color: '#9ca3af' }} />
-              </div>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                fontSize: '14px',
-                fontWeight: '600',
-                color: '#374151'
-              }}>
-                Total Funds Utilized (Cr)
-                <ArrowUpDown style={{ width: '14px', height: '14px', color: '#9ca3af' }} />
-              </div>
-            </div>
-
-            {/* Table Rows */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr 1fr 1fr',
-              padding: '12px 16px',
-              borderBottom: '1px solid #e5e7eb',
-              backgroundColor: 'white'
-            }}>
-              <div style={{ fontSize: '14px', color: '#111827' }}>Jodhpur</div>
-              <div style={{ fontSize: '14px', color: '#111827' }}>₹ 2,150</div>
-              <div style={{ fontSize: '14px', color: '#111827' }}>₹ 78,000</div>
-              <div style={{ fontSize: '14px', color: '#111827' }}>₹ 2.5 Cr</div>
-            </div>
-
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr 1fr 1fr',
-              padding: '12px 16px',
-              borderBottom: '1px solid #e5e7eb',
-              backgroundColor: 'white'
-            }}>
-              <div style={{ fontSize: '14px', color: '#111827' }}>Jaipur</div>
-              <div style={{ fontSize: '14px', color: '#111827' }}>₹ 2,450</div>
-              <div style={{ fontSize: '14px', color: '#111827' }}>₹ 85,000</div>
-              <div style={{ fontSize: '14px', color: '#111827' }}>₹ 2.5 Cr</div>
-            </div>
-
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr 1fr 1fr',
-              padding: '12px 16px',
-              borderBottom: '1px solid #e5e7eb',
-              backgroundColor: 'white'
-            }}>
-              <div style={{ fontSize: '14px', color: '#111827' }}>Udaipur</div>
-              <div style={{ fontSize: '14px', color: '#111827' }}>₹ 2,650</div>
-              <div style={{ fontSize: '14px', color: '#111827' }}>₹ 88,000</div>
-              <div style={{ fontSize: '14px', color: '#111827' }}>₹ 2.5 Cr</div>
-            </div>
-
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr 1fr 1fr',
-              padding: '12px 16px',
-              borderBottom: '1px solid #e5e7eb',
-              backgroundColor: 'white'
-            }}>
-              <div style={{ fontSize: '14px', color: '#111827' }}>Bikaner</div>
-              <div style={{ fontSize: '14px', color: '#111827' }}>₹ 2,890</div>
-              <div style={{ fontSize: '14px', color: '#111827' }}>₹ 92,000</div>
-              <div style={{ fontSize: '14px', color: '#111827' }}>₹ 2.5 Cr</div>
-            </div>
-
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr 1fr 1fr',
-              padding: '12px 16px',
-              backgroundColor: 'white'
-            }}>
-              <div style={{ fontSize: '14px', color: '#111827' }}>Ajmer</div>
-              <div style={{ fontSize: '14px', color: '#111827' }}>₹ 2,890</div>
-              <div style={{ fontSize: '14px', color: '#111827' }}>₹ 98,000</div>
-              <div style={{ fontSize: '14px', color: '#111827' }}>₹ 2.5 Cr</div>
-            </div>
-          </div>
-        </div>
+        )}
       </div>
     );
   };
