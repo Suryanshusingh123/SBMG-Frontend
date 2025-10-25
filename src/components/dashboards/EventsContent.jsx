@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Calendar, ChevronDown, X, Upload, Loader2 } from 'lucide-react';
+import { Plus, Calendar, ChevronDown, X, Upload, Loader2, Edit } from 'lucide-react';
 import { eventsAPI } from '../../services/api';
 
 const EventsContent = () => {
@@ -19,6 +19,17 @@ const EventsContent = () => {
     const [selectedFile, setSelectedFile] = useState(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [submitProgress, setSubmitProgress] = useState('');
+    
+    // Edit event state
+    const [showEditModal, setShowEditModal] = useState(false);
+    const [editFormData, setEditFormData] = useState({
+        name: '',
+        description: '',
+        start_time: '',
+        end_time: '',
+        active: true
+    });
+    const [isUpdating, setIsUpdating] = useState(false);
 
     // Fetch events data on component mount
     useEffect(() => {
@@ -148,6 +159,49 @@ const EventsContent = () => {
         }
     };
 
+    // Handle edit button click
+    const handleEditClick = (event) => {
+        setSelectedEvent(event);
+        setEditFormData({
+            name: event.name || '',
+            description: event.description || '',
+            start_time: event.start_time || '',
+            end_time: event.end_time || '',
+            active: event.active !== undefined ? event.active : true
+        });
+        setShowEditModal(true);
+    };
+
+    // Handle event update
+    const handleUpdateEvent = async () => {
+        if (!editFormData.name.trim() || !editFormData.description.trim()) {
+            alert('Please fill in all required fields');
+            return;
+        }
+
+        setIsUpdating(true);
+
+        try {
+            const updatePayload = {
+                name: editFormData.name,
+                description: editFormData.description,
+                start_time: editFormData.start_time,
+                end_time: editFormData.end_time,
+                active: editFormData.active
+            };
+
+            await eventsAPI.updateEvent(selectedEvent.id, updatePayload);
+            
+            // Close modal and refresh
+            setShowEditModal(false);
+            setIsUpdating(false);
+            fetchEvents(); // Refresh events
+        } catch (error) {
+            console.error('Error updating event:', error);
+            setIsUpdating(false);
+            alert('Failed to update event. Please try again.');
+        }
+    };
 
     return (
         <div style={{ minHeight: '100vh', backgroundColor: '#F3F4F6' }}>
@@ -853,19 +907,41 @@ const EventsContent = () => {
                                 }}>
                                     {selectedEvent?.name || 'Event Details'}
                                 </h2>
-                                <button
-                                    onClick={() => setShowDetailsModal(false)}
-                                    style={{
-                                        background: 'none',
-                                        border: 'none',
-                                        cursor: 'pointer',
-                                        padding: '4px',
-                                        borderRadius: '4px',
-                                        color: '#6b7280'
-                                    }}
-                                >
-                                    <X style={{ width: '20px', height: '20px' }} />
-                                </button>
+                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                    <button
+                                        onClick={() => handleEditClick(selectedEvent)}
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '6px',
+                                            padding: '6px 12px',
+                                            border: '1px solid #10b981',
+                                            borderRadius: '6px',
+                                            backgroundColor: 'transparent',
+                                            color: '#10b981',
+                                            fontSize: '14px',
+                                            fontWeight: '500',
+                                            cursor: 'pointer',
+                                            transition: 'all 0.2s'
+                                        }}
+                                    >
+                                        <Edit style={{ width: '16px', height: '16px' }} />
+                                        Edit Event
+                                    </button>
+                                    <button
+                                        onClick={() => setShowDetailsModal(false)}
+                                        style={{
+                                            background: 'none',
+                                            border: 'none',
+                                            cursor: 'pointer',
+                                            padding: '4px',
+                                            borderRadius: '4px',
+                                            color: '#6b7280'
+                                        }}
+                                    >
+                                        <X style={{ width: '20px', height: '20px' }} />
+                                    </button>
+                                </div>
                             </div>
 
                             {/* Tab Navigation */}
@@ -925,6 +1001,245 @@ const EventsContent = () => {
                     </div>
                 )}
 
+                {/* Edit Event Modal */}
+                {showEditModal && selectedEvent && (
+                    <div style={{
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        zIndex: 1001
+                    }}>
+                        <div style={{
+                            backgroundColor: 'white',
+                            borderRadius: '12px',
+                            width: '500px',
+                            maxHeight: '90vh',
+                            overflow: 'auto',
+                            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)'
+                        }}>
+                            {/* Modal Header */}
+                            <div style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                padding: '20px 24px',
+                                borderBottom: '1px solid #e5e7eb'
+                            }}>
+                                <h2 style={{
+                                    fontSize: '18px',
+                                    fontWeight: '600',
+                                    color: '#111827',
+                                    margin: 0
+                                }}>
+                                    Edit Event
+                                </h2>
+                                <button
+                                    onClick={() => setShowEditModal(false)}
+                                    style={{
+                                        background: 'none',
+                                        border: 'none',
+                                        cursor: 'pointer',
+                                        padding: '4px',
+                                        borderRadius: '4px',
+                                        color: '#6b7280'
+                                    }}
+                                >
+                                    <X style={{ width: '20px', height: '20px' }} />
+                                </button>
+                            </div>
+
+                            {/* Modal Content */}
+                            <div style={{ padding: '24px' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                                    {/* Name Field */}
+                                    <div>
+                                        <label style={{
+                                            display: 'block',
+                                            fontSize: '14px',
+                                            fontWeight: '500',
+                                            color: '#374151',
+                                            marginBottom: '8px'
+                                        }}>
+                                            Event Name
+                                        </label>
+                                        <input
+                                            type="text"
+                                            placeholder="Enter event name"
+                                            value={editFormData.name}
+                                            onChange={(e) => setEditFormData({...editFormData, name: e.target.value})}
+                                            style={{
+                                                width: '100%',
+                                                padding: '12px',
+                                                border: '1px solid #d1d5db',
+                                                borderRadius: '8px',
+                                                fontSize: '14px',
+                                                outline: 'none'
+                                            }}
+                                        />
+                                    </div>
+
+                                    {/* Description Field */}
+                                    <div>
+                                        <label style={{
+                                            display: 'block',
+                                            fontSize: '14px',
+                                            fontWeight: '500',
+                                            color: '#374151',
+                                            marginBottom: '8px'
+                                        }}>
+                                            Description
+                                        </label>
+                                        <textarea
+                                            placeholder="Description"
+                                            value={editFormData.description}
+                                            onChange={(e) => setEditFormData({...editFormData, description: e.target.value})}
+                                            rows={4}
+                                            style={{
+                                                width: '100%',
+                                                padding: '12px',
+                                                border: '1px solid #d1d5db',
+                                                borderRadius: '8px',
+                                                fontSize: '14px',
+                                                outline: 'none',
+                                                resize: 'vertical'
+                                            }}
+                                        />
+                                    </div>
+
+                                    {/* Start Time Field */}
+                                    <div>
+                                        <label style={{
+                                            display: 'block',
+                                            fontSize: '14px',
+                                            fontWeight: '500',
+                                            color: '#374151',
+                                            marginBottom: '8px'
+                                        }}>
+                                            Start Time
+                                        </label>
+                                        <input
+                                            type="datetime-local"
+                                            value={editFormData.start_time ? new Date(editFormData.start_time).toISOString().slice(0, 16) : ''}
+                                            onChange={(e) => setEditFormData({...editFormData, start_time: e.target.value})}
+                                            style={{
+                                                width: '100%',
+                                                padding: '12px',
+                                                border: '1px solid #d1d5db',
+                                                borderRadius: '8px',
+                                                fontSize: '14px',
+                                                outline: 'none'
+                                            }}
+                                        />
+                                    </div>
+
+                                    {/* End Time Field */}
+                                    <div>
+                                        <label style={{
+                                            display: 'block',
+                                            fontSize: '14px',
+                                            fontWeight: '500',
+                                            color: '#374151',
+                                            marginBottom: '8px'
+                                        }}>
+                                            End Time
+                                        </label>
+                                        <input
+                                            type="datetime-local"
+                                            value={editFormData.end_time ? new Date(editFormData.end_time).toISOString().slice(0, 16) : ''}
+                                            onChange={(e) => setEditFormData({...editFormData, end_time: e.target.value})}
+                                            style={{
+                                                width: '100%',
+                                                padding: '12px',
+                                                border: '1px solid #d1d5db',
+                                                borderRadius: '8px',
+                                                fontSize: '14px',
+                                                outline: 'none'
+                                            }}
+                                        />
+                                    </div>
+
+                                    {/* Active Status Field */}
+                                    <div>
+                                        <label style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '8px',
+                                            fontSize: '14px',
+                                            fontWeight: '500',
+                                            color: '#374151',
+                                            cursor: 'pointer'
+                                        }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={editFormData.active}
+                                                onChange={(e) => setEditFormData({...editFormData, active: e.target.checked})}
+                                                style={{
+                                                    width: '16px',
+                                                    height: '16px',
+                                                    cursor: 'pointer'
+                                                }}
+                                            />
+                                            Active
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Modal Footer */}
+                            <div style={{
+                                display: 'flex',
+                                justifyContent: 'flex-end',
+                                gap: '12px',
+                                padding: '20px 24px',
+                                borderTop: '1px solid #e5e7eb'
+                            }}>
+                                <button
+                                    onClick={() => setShowEditModal(false)}
+                                    disabled={isUpdating}
+                                    style={{
+                                        padding: '10px 20px',
+                                        border: '1px solid #d1d5db',
+                                        borderRadius: '8px',
+                                        backgroundColor: 'white',
+                                        color: '#374151',
+                                        fontSize: '14px',
+                                        fontWeight: '500',
+                                        cursor: isUpdating ? 'not-allowed' : 'pointer',
+                                        opacity: isUpdating ? 0.6 : 1
+                                    }}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleUpdateEvent}
+                                    disabled={isUpdating}
+                                    style={{
+                                        padding: '10px 20px',
+                                        border: 'none',
+                                        borderRadius: '8px',
+                                        backgroundColor: isUpdating ? '#9ca3af' : '#10b981',
+                                        color: 'white',
+                                        fontSize: '14px',
+                                        fontWeight: '500',
+                                        cursor: isUpdating ? 'not-allowed' : 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '8px'
+                                    }}
+                                >
+                                    {isUpdating && <Loader2 style={{ width: '16px', height: '16px', animation: 'spin 1s linear infinite' }} />}
+                                    {isUpdating ? 'Updating...' : 'Update Event'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );

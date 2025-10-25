@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { MapPin, ChevronDown, Calendar, List, Info, Search, Filter, Download, Eye, Edit, Trash2, CheckCircle, XCircle, Clock, Users, UserCheck, UserX } from 'lucide-react';
+import { MapPin, ChevronDown, Calendar, List, Info, Search, Filter, Download, Eye, Edit, Trash2, CheckCircle, XCircle, Clock, Users, UserCheck, UserX, X } from 'lucide-react';
 import Chart from 'react-apexcharts';
 import apiClient from '../../services/api';
 
@@ -174,6 +174,14 @@ const AttendanceContent = () => {
     const [activeFilter, setActiveFilter] = useState('All');
     const [searchTerm, setSearchTerm] = useState('');
     const [activePerformance, setActivePerformance] = useState('Time');
+
+  // Send Notice Modal state
+  const [showSendNoticeModal, setShowSendNoticeModal] = useState(false);
+  const [noticeForm, setNoticeForm] = useState({
+    subject: '',
+    category: '',
+    details: ''
+  });
 
   // Analytics data state
   const [analyticsData, setAnalyticsData] = useState(null);
@@ -3184,7 +3192,9 @@ const AttendanceContent = () => {
                         padding: '12px',
                         textAlign: 'right'
                       }}>
-                        <button style={{
+                        <button 
+                          onClick={() => setShowSendNoticeModal(true)}
+                          style={{
                           padding: '6px 12px',
                           backgroundColor: 'transparent',
                           border: '1px solid #d1d5db',
@@ -3203,6 +3213,196 @@ const AttendanceContent = () => {
             </table>
           </div>
         </div>
+
+      {/* Send Notice Modal */}
+      {showSendNoticeModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}
+        onClick={() => setShowSendNoticeModal(false)}
+        >
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: '12px',
+            width: '600px',
+            maxWidth: '90vw',
+            maxHeight: '90vh',
+            overflow: 'auto'
+          }}
+          onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div style={{
+              padding: '24px',
+              borderBottom: '1px solid #e5e7eb',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <h2 style={{
+                fontSize: '20px',
+                fontWeight: '600',
+                color: '#111827',
+                margin: 0
+              }}>
+                Notice - Location
+              </h2>
+              <button
+                onClick={() => setShowSendNoticeModal(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '4px'
+                }}
+              >
+                <X style={{ width: '24px', height: '24px', color: '#6b7280' }} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: '24px' }}>
+              {/* Subject Field */}
+              <div style={{ marginBottom: '24px' }}>
+                <label style={{
+                  display: 'block',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  color: '#374151',
+                  marginBottom: '8px'
+                }}>
+                  Subject
+                </label>
+                <input
+                  type="text"
+                  value={noticeForm.subject}
+                  onChange={(e) => setNoticeForm({ ...noticeForm, subject: e.target.value })}
+                  placeholder="Enter scheme"
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    outline: 'none'
+                  }}
+                />
+              </div>
+
+              {/* Category Field */}
+              <div style={{ marginBottom: '24px' }}>
+                <label style={{
+                  display: 'block',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  color: '#374151',
+                  marginBottom: '8px'
+                }}>
+                  Category
+                </label>
+                <input
+                  type="text"
+                  value={noticeForm.category}
+                  onChange={(e) => setNoticeForm({ ...noticeForm, category: e.target.value })}
+                  placeholder="Select"
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    outline: 'none'
+                  }}
+                />
+              </div>
+
+              {/* Details Field */}
+              <div style={{ marginBottom: '24px' }}>
+                <label style={{
+                  display: 'block',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  color: '#374151',
+                  marginBottom: '8px'
+                }}>
+                  Details
+                </label>
+                <textarea
+                  value={noticeForm.details}
+                  onChange={(e) => setNoticeForm({ ...noticeForm, details: e.target.value })}
+                  placeholder="Details"
+                  rows={6}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    outline: 'none',
+                    resize: 'vertical',
+                    fontFamily: 'inherit'
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div style={{
+              padding: '24px',
+              borderTop: '1px solid #e5e7eb',
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: '12px'
+            }}>
+              <button
+                onClick={() => setShowSendNoticeModal(false)}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#f3f4f6',
+                  color: '#374151',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  // Handle send logic here
+                  console.log('Sending notice:', noticeForm);
+                  setShowSendNoticeModal(false);
+                  // Reset form
+                  setNoticeForm({ subject: '', category: '', details: '' });
+                }}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#10b981',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  cursor: 'pointer'
+                }}
+              >
+                Send
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

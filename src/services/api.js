@@ -79,6 +79,9 @@ export const schemesAPI = {
   createScheme: (schemeData) => {
     return apiClient.post('/schemes/', schemeData);
   },
+  updateScheme: (schemeId, schemeData) => {
+    return apiClient.put(`/schemes/${schemeId}`, schemeData);
+  },
   uploadSchemeMedia: (schemeId, mediaFile) => {
     const formData = new FormData();
     formData.append('media', mediaFile);
@@ -102,6 +105,9 @@ export const eventsAPI = {
   },
   createEvent: (eventData) => {
     return apiClient.post('/events/', eventData);
+  },
+  updateEvent: (eventId, eventData) => {
+    return apiClient.put(`/events/${eventId}`, eventData);
   },
   uploadEventMedia: (eventId, mediaFile) => {
     const formData = new FormData();

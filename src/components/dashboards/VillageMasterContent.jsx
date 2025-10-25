@@ -1046,7 +1046,7 @@ const VillageMasterContent = () => {
                             backgroundColor: '#f9fafb',
                             color: '#6b7280',
                             fontSize: '14px',
-                            cursor: 'pointer'
+            cursor: 'pointer'
                           }}
                         >
                           Cancel
@@ -1490,7 +1490,7 @@ const VillageMasterContent = () => {
 
         {/* Coverage Table Section - Only for State, Districts, and Blocks */}
         {activeScope !== 'GPs' && (
-          <div style={{
+  <div style={{
             backgroundColor: 'white',
             padding: '14px',
             marginLeft: '16px',
@@ -1519,85 +1519,85 @@ const VillageMasterContent = () => {
               
               if (coverageData.length === 0) {
                 return (
-                  <div style={{
+          <div style={{
                     padding: '40px',
                     textAlign: 'center',
                     color: '#9ca3af',
                     fontSize: '14px'
                   }}>
                     {loadingAnalytics ? 'Loading...' : 'No coverage data available'}
-                  </div>
+            </div>
                 );
               }
 
               return (
-                <div style={{
-                  borderRadius: '8px',
+        <div style={{
+          borderRadius: '8px',
                   border: '1px solid #e5e7eb',
                   overflow: 'hidden'
                 }}>
-                  <div style={{ 
+          <div style={{
                     minWidth: '600px',
                     maxHeight: '500px',
                     overflowY: 'auto',
                     overflowX: 'auto'
                   }}>
                     {/* Table Header - Sticky */}
-                    <div style={{
-                      display: 'grid',
+            <div style={{
+              display: 'grid',
                       gridTemplateColumns: '2fr 1fr 1fr 1fr 1.5fr',
-                      backgroundColor: '#f9fafb',
-                      padding: '12px 16px',
+              backgroundColor: '#f9fafb',
+              padding: '12px 16px',
                       borderBottom: '1px solid #e5e7eb',
                       position: 'sticky',
                       top: 0,
                       zIndex: 10
-                    }}>
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        fontSize: '14px',
-                        fontWeight: '600',
-                        color: '#374151'
-                      }}>
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontSize: '14px',
+                fontWeight: '600',
+                color: '#374151'
+              }}>
                         {activeScope === 'State' ? 'District' : activeScope === 'Districts' ? 'Block' : 'GP'} Name
-                        <ArrowUpDown style={{ width: '14px', height: '14px', color: '#9ca3af' }} />
-                      </div>
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        fontSize: '14px',
-                        fontWeight: '600',
-                        color: '#374151'
-                      }}>
+                <ArrowUpDown style={{ width: '14px', height: '14px', color: '#9ca3af' }} />
+              </div>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontSize: '14px',
+                fontWeight: '600',
+                color: '#374151'
+              }}>
                         Total {activeScope === 'State' || activeScope === 'Districts' ? 'GPs' : 'Villages'}
-                        <ArrowUpDown style={{ width: '14px', height: '14px', color: '#9ca3af' }} />
-                      </div>
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        fontSize: '14px',
-                        fontWeight: '600',
-                        color: '#374151'
-                      }}>
+                <ArrowUpDown style={{ width: '14px', height: '14px', color: '#9ca3af' }} />
+              </div>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontSize: '14px',
+                fontWeight: '600',
+                color: '#374151'
+              }}>
                         {activeScope === 'State' || activeScope === 'Districts' ? 'GPs' : 'Villages'} with Data
-                        <ArrowUpDown style={{ width: '14px', height: '14px', color: '#9ca3af' }} />
-                      </div>
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        fontSize: '14px',
-                        fontWeight: '600',
-                        color: '#374151'
-                      }}>
+                <ArrowUpDown style={{ width: '14px', height: '14px', color: '#9ca3af' }} />
+              </div>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontSize: '14px',
+                fontWeight: '600',
+                color: '#374151'
+              }}>
                         Coverage %
-                        <ArrowUpDown style={{ width: '14px', height: '14px', color: '#9ca3af' }} />
-                      </div>
-                      <div style={{
+                <ArrowUpDown style={{ width: '14px', height: '14px', color: '#9ca3af' }} />
+              </div>
+            <div style={{
                         display: 'flex',
                         alignItems: 'center',
                         gap: '8px',
@@ -1607,15 +1607,15 @@ const VillageMasterContent = () => {
                       }}>
                         Status
                         <ArrowUpDown style={{ width: '14px', height: '14px', color: '#9ca3af' }} />
-                      </div>
-                    </div>
+            </div>
+            </div>
 
                     {/* Table Rows */}
                     {coverageData.map((item, index) => (
                       <div key={item.geography_id || index} style={{
-                        display: 'grid',
+              display: 'grid',
                         gridTemplateColumns: '2fr 1fr 1fr 1fr 1.5fr',
-                        padding: '12px 16px',
+              padding: '12px 16px',
                         borderBottom: index < coverageData.length - 1 ? '1px solid #e5e7eb' : 'none',
                         backgroundColor: 'white',
                         transition: 'background-color 0.2s'
@@ -1625,10 +1625,10 @@ const VillageMasterContent = () => {
                       >
                         <div style={{ fontSize: '14px', color: '#111827', fontWeight: '500' }}>
                           {item.geography_name}
-                        </div>
+            </div>
                         <div style={{ fontSize: '14px', color: '#111827' }}>
                           {formatNumber(item.total_gps || 0)}
-                        </div>
+            </div>
                         <div style={{ fontSize: '14px', color: '#111827' }}>
                           {formatNumber(item.gps_with_data || 0)}
                         </div>
@@ -1645,10 +1645,10 @@ const VillageMasterContent = () => {
                           }}>
                             {item.master_data_status || 'Not Available'}
                           </span>
-                        </div>
-                      </div>
+            </div>
+          </div>
                     ))}
-                  </div>
+        </div>
                 </div>
               );
             })()}

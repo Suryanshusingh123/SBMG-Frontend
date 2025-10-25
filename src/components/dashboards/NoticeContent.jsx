@@ -1,9 +1,89 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Plus, Calendar, ChevronDown, X, Upload, Search, Download, Info, List } from 'lucide-react';
+import apiClient from '../../services/api';
 
 const NotoficationContent = () => {
-  
-    return (
+  const [sentNotices, setSentNotices] = useState([]);
+  const [receivedNotices, setReceivedNotices] = useState([]);
+  const [loadingSent, setLoadingSent] = useState(true);
+  const [loadingReceived, setLoadingReceived] = useState(true);
+  const [errorSent, setErrorSent] = useState(null);
+  const [errorReceived, setErrorReceived] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear().toString());
+
+  // Fetch sent notices
+  useEffect(() => {
+    const fetchSentNotices = async () => {
+      try {
+        setLoadingSent(true);
+        const response = await apiClient.get('/notices/sent?skip=0&limit=50');
+        console.log('✅ Sent Notices API Response:', response.data);
+        setSentNotices(response.data || []);
+        setErrorSent(null);
+      } catch (error) {
+        console.error('❌ Error fetching sent notices:', error);
+        setErrorSent(error.message || 'Failed to fetch sent notices');
+        setSentNotices([]);
+      } finally {
+        setLoadingSent(false);
+      }
+    };
+
+    fetchSentNotices();
+  }, []);
+
+  // Fetch received notices
+  useEffect(() => {
+    const fetchReceivedNotices = async () => {
+      try {
+        setLoadingReceived(true);
+        const response = await apiClient.get('/notices/received?skip=0&limit=50');
+        console.log('✅ Received Notices API Response:', response.data);
+        setReceivedNotices(response.data || []);
+        setErrorReceived(null);
+      } catch (error) {
+        console.error('❌ Error fetching received notices:', error);
+        setErrorReceived(error.message || 'Failed to fetch received notices');
+        setReceivedNotices([]);
+      } finally {
+        setLoadingReceived(false);
+      }
+    };
+
+    fetchReceivedNotices();
+  }, []);
+
+  // Filter notices based on search term
+  const filteredNotices = receivedNotices.filter(notice => 
+    notice.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    notice.sender_info?.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    notice.text?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  // Format date
+  const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    } catch (error) {
+      return 'N/A';
+    }
+  };
+
+  // Get sender name
+  const getSenderName = (senderInfo) => {
+    if (!senderInfo) return 'Unknown';
+    const parts = [
+      senderInfo.first_name,
+      senderInfo.middle_name,
+      senderInfo.last_name
+    ].filter(Boolean);
+    return parts.join(' ') || 'Unknown';
+  };
+
+  return (
         <div style={{ minHeight: '100vh', backgroundColor: '#F3F4F6' }}>
             {/* Header Section */}
             <div style={{
@@ -65,7 +145,7 @@ const NotoficationContent = () => {
                         color: '#111827',
                         lineHeight: '1'
                     }}>
-                        234
+                        {loadingSent ? '...' : errorSent ? '0' : sentNotices.length}
                         </div>
                     </div>
 
@@ -107,7 +187,7 @@ const NotoficationContent = () => {
                         color: '#111827',
                         lineHeight: '1'
                     }}>
-                        3,452
+                        {loadingReceived ? '...' : errorReceived ? '0' : receivedNotices.length}
                     </div>
                 </div>
             </div>
@@ -144,7 +224,7 @@ const NotoficationContent = () => {
                                     color: '#6b7280',
                                     margin: 0
                                 }}>
-                            12, January 2025
+                            {new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
                                 </p>
                             </div>
 
@@ -167,6 +247,8 @@ const NotoficationContent = () => {
                                     <input
                                         type="text"
                                 placeholder="Search"
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
                                         style={{
                                     padding: '8px 12px 8px 40px',
                                             border: '1px solid #d1d5db',
@@ -198,7 +280,10 @@ const NotoficationContent = () => {
 
                         {/* Year Filter */}
                                         <div style={{ position: 'relative' }}>
-                            <select style={{
+                            <select 
+                                value={selectedYear}
+                                onChange={(e) => setSelectedYear(e.target.value)}
+                                style={{
                                 padding: '8px 40px 8px 12px',
                                                     border: '1px solid #d1d5db',
                                                     borderRadius: '8px',
@@ -256,7 +341,7 @@ const NotoficationContent = () => {
                                     color: '#374151'
                                 }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                        Assigned to
+                                        From
                                         <ChevronDown style={{ width: '14px', height: '14px', color: '#9ca3af' }} />
                             </div>
                                 </th>
@@ -268,7 +353,7 @@ const NotoficationContent = () => {
                                     color: '#374151'
                                 }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                        Notice Count
+                                        Title
                                         <ChevronDown style={{ width: '14px', height: '14px', color: '#9ca3af' }} />
                         </div>
                                 </th>
@@ -292,84 +377,87 @@ const NotoficationContent = () => {
                                     color: '#374151'
                                 }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                        Subject
-                                        <ChevronDown style={{ width: '14px', height: '14px', color: '#9ca3af' }} />
-                                    </div>
-                                </th>
-                                <th style={{
-                                    padding: '12px 24px',
-                                    textAlign: 'left',
-                                    fontSize: '14px',
-                                    fontWeight: '600',
-                                    color: '#374151'
-                                }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                        Status
+                                        Location
                                         <ChevronDown style={{ width: '14px', height: '14px', color: '#9ca3af' }} />
                         </div>
                                 </th>
                             </tr>
                         </thead>
                         <tbody>
-                            <tr style={{
-                                borderBottom: '1px solid #e5e7eb',
-                                backgroundColor: 'white'
-                            }}>
-                                <td style={{
-                                    padding: '16px 24px',
-                                    fontSize: '14px',
-                                    color: '#374151'
-                                }}>
-                                    12/02/2023
-                                </td>
-                                <td style={{
-                                    padding: '16px 24px',
-                                    fontSize: '14px',
-                                    color: '#374151'
-                                }}>
-                                    <div>
-                                        <div style={{ fontWeight: '500' }}>Gram Panchayat</div>
-                                        <div style={{ fontSize: '12px', color: '#6b7280' }}>District - Block</div>
-                    </div>
-                                </td>
-                                <td style={{
-                                    padding: '16px 24px',
-                                    fontSize: '14px',
-                                    color: '#374151'
-                                }}>
-                                    1
-                                </td>
-                                <td style={{
-                                    padding: '16px 24px',
-                                    fontSize: '14px',
-                                    color: '#374151'
-                                }}>
-                                    Category
-                                </td>
-                                <td style={{
-                                    padding: '16px 24px',
-                                    fontSize: '14px',
-                                    color: '#374151'
-                                }}>
-                                    Avg Response Time
-                                </td>
-                                <td style={{
-                                    padding: '16px 24px',
-                                    fontSize: '14px',
-                                    color: '#374151'
-                                }}>
-                                    <span style={{
-                                        backgroundColor: '#fef2f2',
-                                        color: '#dc2626',
-                                        padding: '4px 12px',
-                                        borderRadius: '20px',
-                                        fontSize: '12px',
-                                        fontWeight: '500'
+                            {loadingReceived ? (
+                                <tr>
+                                    <td colSpan={5} style={{ padding: '40px', textAlign: 'center', color: '#6b7280' }}>
+                                        Loading notices...
+                                    </td>
+                                </tr>
+                            ) : errorReceived ? (
+                                <tr>
+                                    <td colSpan={5} style={{ padding: '40px', textAlign: 'center', color: '#ef4444' }}>
+                                        {errorReceived}
+                                    </td>
+                                </tr>
+                            ) : filteredNotices.length === 0 ? (
+                                <tr>
+                                    <td colSpan={5} style={{ padding: '40px', textAlign: 'center', color: '#6b7280' }}>
+                                        No notices found
+                                    </td>
+                                </tr>
+                            ) : (
+                                filteredNotices.map((notice) => (
+                                    <tr key={notice.id} style={{
+                                        borderBottom: '1px solid #e5e7eb',
+                                        backgroundColor: 'white'
                                     }}>
-                                        Open
-                                    </span>
-                                </td>
-                            </tr>
+                                        <td style={{
+                                            padding: '16px 24px',
+                                            fontSize: '14px',
+                                            color: '#374151'
+                                        }}>
+                                            {formatDate(notice.date)}
+                                        </td>
+                                        <td style={{
+                                            padding: '16px 24px',
+                                            fontSize: '14px',
+                                            color: '#374151'
+                                        }}>
+                                            <div>
+                                                <div style={{ fontWeight: '500' }}>{getSenderName(notice.sender_info)}</div>
+                                                <div style={{ fontSize: '12px', color: '#6b7280' }}>{notice.sender_info?.role_name || 'N/A'}</div>
+                    </div>
+                                        </td>
+                                        <td style={{
+                                            padding: '16px 24px',
+                                            fontSize: '14px',
+                                            color: '#374151'
+                                        }}>
+                                            {notice.title || 'N/A'}
+                                        </td>
+                                        <td style={{
+                                            padding: '16px 24px',
+                                            fontSize: '14px',
+                                            color: '#374151'
+                                        }}>
+                                            Notice
+                                        </td>
+                                        <td style={{
+                                            padding: '16px 24px',
+                                            fontSize: '14px',
+                                            color: '#374151'
+                                        }}>
+                                            {notice.sender_info?.district_name && (
+                                                <div>
+                                                    <div>{notice.sender_info.district_name}</div>
+                                                    {notice.sender_info.block_name && (
+                                                        <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                                                            {notice.sender_info.block_name}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
                         </tbody>
                     </table>
                 </div>
