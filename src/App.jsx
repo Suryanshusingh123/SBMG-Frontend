@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
+import { LocationProvider } from './context/LocationContext';
 import Login from './pages/Login';
 import UnifiedDashboard from './components/dashboards/UnifiedDashboard';
 
@@ -55,7 +56,9 @@ function App() {
           path="/dashboard"
           element={
             <ProtectedRoute>
-              <UnifiedDashboard />
+              <LocationProvider>
+                <UnifiedDashboard />
+              </LocationProvider>
             </ProtectedRoute>
           }
         />

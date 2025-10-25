@@ -5,24 +5,25 @@ import number1 from '../../assets/images/number1.png';
 import number2 from '../../assets/images/nnumber2.png';
 import number3 from '../../assets/images/number3.png';
 import apiClient from '../../services/api';
+import { useLocation } from '../../context/LocationContext';
+import LocationDisplay from '../common/LocationDisplay';
 
-const SegmentedGauge = ({ percentage, label = "Complaints closed" }) => {
-  // Calculate which segments should be filled based on percentage
-  const getSegmentColor = (segmentIndex) => {
-    const segmentThreshold = (segmentIndex + 1) * 33.33; // Each segment represents ~33%
-    
-    if (percentage >= segmentThreshold) {
-      // Fully filled
-      if (segmentIndex === 0) return '#10b981'; // Green
-      if (segmentIndex === 1) return '#fbbf24'; // Yellow
-      if (segmentIndex === 2) return '#ef4444'; // Red
-    } else if (percentage > (segmentIndex * 33.33)) {
-      // Partially filled - show appropriate color
-      if (segmentIndex === 0) return '#10b981';
-      if (segmentIndex === 1) return '#fbbf24';
-      if (segmentIndex === 2) return '#ef4444';
-    }
-    return '#f3f4f6'; // Gray (unfilled)
+const SegmentedGauge = ({ complaintData, percentage, label = "Complaints closed" }) => {
+  // Calculate total complaints for percentage calculation
+  const total = complaintData.open + complaintData.verified + complaintData.resolved + complaintData.disposed;
+  
+  // Calculate percentages for each status
+  const openPercent = total > 0 ? (complaintData.open / total) * 100 : 0;
+  const verifiedPercent = total > 0 ? (complaintData.verified / total) * 100 : 0;
+  const resolvedPercent = total > 0 ? (complaintData.resolved / total) * 100 : 0;
+  const disposedPercent = total > 0 ? (complaintData.disposed / total) * 100 : 0;
+  
+  // Define colors for each status
+  const statusColors = {
+    open: '#ef4444',      // Red
+    verified: '#f97316',  // Orange
+    resolved: '#8b5cf6',  // Purple
+    disposed: '#10b981'   // Green
   };
 
   // Calculate the arc path for percentage fill with circular ends
@@ -54,16 +55,54 @@ const SegmentedGauge = ({ percentage, label = "Complaints closed" }) => {
     };
   };
 
-  // Segment angles (200° total, divided into 3 segments with gaps)
-  const gapSize = 19; // degrees
-  const totalAngle = 200;
-  const segmentAngle = (totalAngle - (2 * gapSize)) / 3;
+  // Create segments with gaps like the original design
+  const createSegments = () => {
+    const segments = [];
+    const totalAngle = 200; // Total arc angle
+    const gapSize = 19; // degrees - same as original
+    const availableAngle = totalAngle - (3 * gapSize); // Account for 3 gaps between 4 segments
+    
+    // Only create segments for statuses that have complaints
+    const statuses = [
+      { name: 'open', percent: openPercent, color: statusColors.open },
+      { name: 'verified', percent: verifiedPercent, color: statusColors.verified },
+      { name: 'resolved', percent: resolvedPercent, color: statusColors.resolved },
+      { name: 'disposed', percent: disposedPercent, color: statusColors.disposed }
+    ].filter(status => status.percent > 0);
+    
+    // If no complaints, return empty array
+    if (statuses.length === 0) {
+      return [];
+    }
+    
+    // Calculate total percentage of active statuses
+    const totalActivePercent = statuses.reduce((sum, status) => sum + status.percent, 0);
+    
+    // Distribute segments proportionally
+    let currentAngle = -90;
+    const segmentCount = Math.min(statuses.length, 3); // Max 3 segments like original
+    
+    for (let i = 0; i < segmentCount; i++) {
+      const status = statuses[i];
+      const segmentAngle = (status.percent / totalActivePercent) * availableAngle;
+      const endAngle = currentAngle + segmentAngle;
+      
+      segments.push({
+        start: currentAngle,
+        end: endAngle,
+        color: status.color,
+        name: status.name
+      });
+      
+      currentAngle = endAngle + gapSize;
+    }
+    
+    // Don't add gray filler - only show actual data segments
+    
+    return segments;
+  };
   
-  const segments = [
-    { start: -90, end: -90 + segmentAngle, color: getSegmentColor(0) },
-    { start: -90 + segmentAngle + gapSize, end: -90 + (2 * segmentAngle) + gapSize, color: getSegmentColor(1) },
-    { start: -90 + (2 * segmentAngle) + (2 * gapSize), end: 90, color: getSegmentColor(2) }
-  ];
+  const segments = createSegments();
 
   return (
     <div style={{ 
@@ -138,29 +177,67 @@ const SegmentedGauge = ({ percentage, label = "Complaints closed" }) => {
         >
           {label}
         </text>
+        
       </svg>
     </div>
   );
 };
 
 const DashboardContent = () => {
-  const [activeScope, setActiveScope] = useState('State');
-  const [selectedLocation, setSelectedLocation] = useState('Rajashtan / All');
+  // Use LocationContext for global state management
+  const {
+    activeScope,
+    selectedLocation,
+    selectedLocationId,
+    selectedDistrictId,
+    selectedBlockId,
+    selectedGPId,
+    dropdownLevel,
+    selectedDistrictForHierarchy,
+    selectedBlockForHierarchy,
+    changeHistory,
+    lastChange,
+    setActiveScope,
+    setSelectedLocation,
+    setSelectedLocationId,
+    setSelectedDistrictId,
+    setSelectedBlockId,
+    setSelectedGPId,
+    setDropdownLevel,
+    setSelectedDistrictForHierarchy,
+    setSelectedBlockForHierarchy,
+    updateLocationSelection,
+    getCurrentLocationInfo,
+    trackTabChange,
+    trackDropdownChange,
+    getChangeHistory,
+    getLastChange
+  } = useLocation();
+
+  // Local state for UI controls
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
   const [districts, setDistricts] = useState([]);
-  const [selectedDistrictId, setSelectedDistrictId] = useState(null);
   const [loadingDistricts, setLoadingDistricts] = useState(false);
   const [blocks, setBlocks] = useState([]);
-  const [selectedBlockId, setSelectedBlockId] = useState(null);
   const [loadingBlocks, setLoadingBlocks] = useState(false);
   const [gramPanchayats, setGramPanchayats] = useState([]);
-  const [selectedGPId, setSelectedGPId] = useState(null);
   const [loadingGPs, setLoadingGPs] = useState(false);
-  
-  // Hierarchical dropdown state
-  const [dropdownLevel, setDropdownLevel] = useState('districts'); // 'districts', 'blocks', 'gps'
-  const [selectedDistrictForHierarchy, setSelectedDistrictForHierarchy] = useState(null);
-  const [selectedBlockForHierarchy, setSelectedBlockForHierarchy] = useState(null);
+
+  // Analytics data state
+  const [analyticsData, setAnalyticsData] = useState(null);
+  const [loadingAnalytics, setLoadingAnalytics] = useState(false);
+  const [analyticsError, setAnalyticsError] = useState(null);
+
+  // Complaints chart data state
+  const [complaintsChartData, setComplaintsChartData] = useState(null);
+  const [loadingComplaintsChart, setLoadingComplaintsChart] = useState(false);
+  const [complaintsChartError, setComplaintsChartError] = useState(null);
+
+  // Log current location info whenever it changes
+  useEffect(() => {
+    const locationInfo = getCurrentLocationInfo();
+    console.log('Current Location Info:', locationInfo);
+  }, [activeScope, selectedLocation, selectedLocationId, selectedDistrictId, selectedBlockId, selectedGPId, getCurrentLocationInfo]);
   
   // Date selection state
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -170,13 +247,21 @@ const DashboardContent = () => {
   const [selectionStep, setSelectionStep] = useState('year'); // 'year', 'month', 'day'
   
   // Date range state
-  const [selectedDateRange, setSelectedDateRange] = useState('Last 30 Days');
-  const [startDate, setStartDate] = useState(null);
-  const [endDate, setEndDate] = useState(null);
+  const [selectedDateRange, setSelectedDateRange] = useState('Today');
+  const [startDate, setStartDate] = useState(() => {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  });
+  const [endDate, setEndDate] = useState(() => {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  });
   const [isCustomRange, setIsCustomRange] = useState(false);
   
   // Complaints year selection state
-  const [selectedComplaintsYear, setSelectedComplaintsYear] = useState(new Date().getFullYear());
+  const [selectedComplaintsYear, setSelectedComplaintsYear] = useState(() => {
+    return new Date().getFullYear();
+  });
   const [showComplaintsYearDropdown, setShowComplaintsYearDropdown] = useState(false);
   
   // Complaints filter tabs state
@@ -239,6 +324,270 @@ const DashboardContent = () => {
     }
   };
 
+  // Fetch Analytics Data from API
+  const fetchAnalyticsData = async () => {
+    try {
+      setLoadingAnalytics(true);
+      setAnalyticsError(null);
+
+      console.log('🔄 ===== ANALYTICS API CALL =====');
+      console.log('📍 Current State:', {
+        activeScope,
+        selectedLocation,
+        selectedDistrictId,
+        selectedBlockId,
+        selectedGPId,
+        startDate,
+        endDate
+      });
+
+      // Build query parameters based on selected scope
+      const params = new URLSearchParams();
+
+      // Determine level based on active scope
+      let level = 'DISTRICT'; // Default for State scope
+      if (activeScope === 'Districts') {
+        level = 'BLOCK';
+      } else if (activeScope === 'Blocks') {
+        level = 'VILLAGE';
+      } else if (activeScope === 'GPs') {
+        level = 'VILLAGE';
+      }
+      params.append('level', level);
+      console.log('📊 Level:', level);
+
+      // Add geography IDs based on selection
+      if (activeScope === 'Districts' && selectedDistrictId) {
+        params.append('district_id', selectedDistrictId);
+        console.log('🏙️  District ID:', selectedDistrictId);
+      } else if (activeScope === 'Blocks' && selectedBlockId) {
+        params.append('block_id', selectedBlockId);
+        console.log('🏘️  Block ID:', selectedBlockId);
+      } else if (activeScope === 'GPs' && selectedGPId) {
+        params.append('gp_id', selectedGPId);
+        console.log('🏡 GP ID:', selectedGPId);
+      }
+
+      // Add date range if available
+      if (startDate) {
+        params.append('start_date', startDate);
+        console.log('📅 Start Date:', startDate);
+      }
+      if (endDate) {
+        params.append('end_date', endDate);
+        console.log('📅 End Date:', endDate);
+      }
+
+      const url = `/complaints/analytics/geo?${params.toString()}`;
+      console.log('🌐 Full API URL:', url);
+      console.log('🔗 Complete URL:', `${apiClient.defaults.baseURL}${url}`);
+      
+      // Check if token exists
+      const token = localStorage.getItem('access_token');
+      console.log('🔑 Token Status:', token ? 'Present' : 'Missing');
+      if (token) {
+        console.log('🔑 Token Preview:', token.substring(0, 20) + '...');
+      }
+      
+      const response = await apiClient.get(url);
+      
+      console.log('✅ Analytics API Response:', {
+        status: response.status,
+        statusText: response.statusText,
+        data: response.data
+      });
+      
+      console.log('📦 Response Data Structure:', {
+        geo_type: response.data?.geo_type,
+        response_count: response.data?.response?.length,
+        sample_data: response.data?.response?.slice(0, 2)
+      });
+      
+      setAnalyticsData(response.data);
+      
+      // Calculate and log aggregated counts
+      const aggregated = {
+        total: 0,
+        open: 0,
+        verified: 0,
+        resolved: 0,
+        disposed: 0
+      };
+      
+      response.data?.response?.forEach(item => {
+        const status = item.status?.toUpperCase();
+        const count = item.count || 0;
+        aggregated.total += count;
+        
+        switch (status) {
+          case 'OPEN':
+            aggregated.open += count;
+            break;
+          case 'VERIFIED':
+            aggregated.verified += count;
+            break;
+          case 'RESOLVED':
+            aggregated.resolved += count;
+            break;
+          case 'CLOSED':
+          case 'DISPOSED':
+            aggregated.disposed += count;
+            break;
+        }
+      });
+      
+      console.log('📈 Aggregated Counts:', aggregated);
+      console.log('🔄 ===== END ANALYTICS API CALL =====\n');
+      
+    } catch (error) {
+      console.error('❌ ===== ANALYTICS API ERROR =====');
+      console.error('Error Type:', error.name);
+      console.error('Error Message:', error.message);
+      console.error('Error Details:', error.response?.data || error);
+      console.error('Status Code:', error.response?.status);
+      console.error('🔄 ===== END ANALYTICS API ERROR =====\n');
+      
+      setAnalyticsError(error.message || 'Failed to fetch analytics data');
+      setAnalyticsData(null);
+    } finally {
+      setLoadingAnalytics(false);
+    }
+  };
+
+  // Fetch Complaints Chart Data from API
+  const fetchComplaintsChartData = async () => {
+    try {
+      setLoadingComplaintsChart(true);
+      setComplaintsChartError(null);
+
+      console.log('🔄 ===== COMPLAINTS CHART API CALL =====');
+      console.log('📍 Current State:', {
+        activeScope,
+        selectedDistrictId,
+        selectedBlockId,
+        selectedGPId,
+        selectedComplaintsYear
+      });
+
+      // Build query parameters based on selected scope
+      const params = new URLSearchParams();
+
+      // Determine level based on active scope
+      let level = 'DISTRICT'; // Default for State scope
+      if (activeScope === 'Districts') {
+        level = 'BLOCK';
+      } else if (activeScope === 'Blocks') {
+        level = 'VILLAGE';
+      } else if (activeScope === 'GPs') {
+        level = 'VILLAGE';
+      }
+      params.append('level', level);
+      console.log('📊 Level:', level);
+
+      // Add geography IDs based on selection
+      if (activeScope === 'Districts' && selectedDistrictId) {
+        params.append('district_id', selectedDistrictId);
+        console.log('🏙️  District ID:', selectedDistrictId);
+      } else if (activeScope === 'Blocks' && selectedBlockId) {
+        params.append('block_id', selectedBlockId);
+        console.log('🏘️  Block ID:', selectedBlockId);
+      } else if (activeScope === 'GPs' && selectedGPId) {
+        params.append('gp_id', selectedGPId);
+        console.log('🏡 GP ID:', selectedGPId);
+      }
+
+      // Add year range
+      const startDate = `${selectedComplaintsYear}-01-01`;
+      const endDate = `${selectedComplaintsYear}-12-31`;
+      params.append('start_date', startDate);
+      params.append('end_date', endDate);
+      console.log('📅 Year Range:', startDate, 'to', endDate);
+
+      const url = `/complaints/analytics/geo?${params.toString()}`;
+      console.log('🌐 Full API URL:', url);
+      
+      const response = await apiClient.get(url);
+      
+      console.log('✅ Complaints Chart API Response:', {
+        status: response.status,
+        statusText: response.statusText,
+        data: response.data
+      });
+      
+      setComplaintsChartData(response.data);
+      console.log('🔄 ===== END COMPLAINTS CHART API CALL =====\n');
+      
+    } catch (error) {
+      console.error('❌ ===== COMPLAINTS CHART API ERROR =====');
+      console.error('Error Type:', error.name);
+      console.error('Error Message:', error.message);
+      console.error('Error Details:', error.response?.data || error);
+      console.error('Status Code:', error.response?.status);
+      console.error('🔄 ===== END COMPLAINTS CHART API ERROR =====\n');
+      
+      setComplaintsChartError(error.message || 'Failed to fetch complaints chart data');
+      setComplaintsChartData(null);
+    } finally {
+      setLoadingComplaintsChart(false);
+    }
+  };
+
+  // Calculate complaint counts from analytics data
+  const calculateComplaintCounts = () => {
+    if (!analyticsData || !analyticsData.response) {
+      return {
+        total: 0,
+        open: 0,
+        verified: 0,
+        resolved: 0,
+        disposed: 0
+      };
+    }
+
+    const counts = {
+      total: 0,
+      open: 0,
+      verified: 0,
+      resolved: 0,
+      disposed: 0
+    };
+
+    // Aggregate counts by status
+    analyticsData.response.forEach(item => {
+      const status = item.status?.toUpperCase();
+      const count = item.count || 0;
+
+      console.log('🔍 Processing complaint item:', {
+        status: status,
+        count: count,
+        originalStatus: item.status
+      });
+
+      counts.total += count;
+
+      switch (status) {
+        case 'OPEN':
+          counts.open += count;
+          break;
+        case 'VERIFIED':
+          counts.verified += count;
+          break;
+        case 'RESOLVED':
+          counts.resolved += count;
+          break;
+        case 'CLOSED':
+        case 'DISPOSED':
+          counts.disposed += count;
+          console.log('✅ Added to disposed:', count);
+          break;
+        default:
+          console.warn('Unknown status:', status);
+      }
+    });
+
+    return counts;
+  };
+
   // Get location options based on active scope and dropdown level
   const getLocationOptions = () => {
     switch (activeScope) {
@@ -272,60 +621,48 @@ const DashboardContent = () => {
 
   // Handle scope change
   const handleScopeChange = (scope) => {
-    setActiveScope(scope);
+    // Track tab change first
+    trackTabChange(scope);
     
     // Close dropdown immediately to prevent showing stale options
     setShowLocationDropdown(false);
     
     if (scope === 'State') {
       // For State scope, set Rajasthan as default and disable dropdown
-      setSelectedLocation('Rajashtan / All');
-      setSelectedDistrictId(null);
-      setSelectedBlockId(null);
-      setSelectedGPId(null);
+      updateLocationSelection('State', 'Rajasthan', null, null, null, null, 'tab_change');
       setDropdownLevel('districts');
       setSelectedDistrictForHierarchy(null);
       setSelectedBlockForHierarchy(null);
     } else if (scope === 'Districts') {
       // Set first district as selected (districts are already loaded)
       if (districts.length > 0) {
-        setSelectedLocation(districts[0].name);
-        setSelectedDistrictId(districts[0].id);
-        setSelectedBlockId(null);
-        setSelectedGPId(null);
+        updateLocationSelection('Districts', districts[0].name, districts[0].id, districts[0].id, null, null, 'tab_change');
       }
+      // Fetch blocks for complaints chart
+      fetchBlocks();
       setDropdownLevel('districts');
       setSelectedDistrictForHierarchy(null);
       setSelectedBlockForHierarchy(null);
     } else if (scope === 'Blocks') {
       // For blocks, start with districts level
       fetchBlocks();
-      setSelectedDistrictId(null);
-      setSelectedBlockId(null);
-      setSelectedGPId(null);
+      updateLocationSelection('Blocks', 'Select District', null, null, null, null, 'tab_change');
       setDropdownLevel('districts');
       setSelectedDistrictForHierarchy(null);
       setSelectedBlockForHierarchy(null);
-      setSelectedLocation('Select District');
     } else if (scope === 'GPs') {
       // For GPs, start with districts level
       fetchBlocks();
       fetchGramPanchayats();
-      setSelectedDistrictId(null);
-      setSelectedBlockId(null);
-      setSelectedGPId(null);
+      updateLocationSelection('GPs', 'Select District', null, null, null, null, 'tab_change');
       setDropdownLevel('districts');
       setSelectedDistrictForHierarchy(null);
       setSelectedBlockForHierarchy(null);
-      setSelectedLocation('Select District');
     } else {
       // For other scopes, reset to first option
       const options = getLocationOptions();
       if (options.length > 0) {
-        setSelectedLocation(options[0].name);
-        setSelectedDistrictId(null);
-        setSelectedBlockId(null);
-        setSelectedGPId(null);
+        updateLocationSelection(scope, options[0].name, options[0].id, null, null, null, 'tab_change');
       }
       setDropdownLevel('districts');
       setSelectedDistrictForHierarchy(null);
@@ -345,9 +682,8 @@ const DashboardContent = () => {
         setShowLocationDropdown(true); // Keep dropdown open
       } else if (dropdownLevel === 'blocks') {
         // User selected a block, final selection
-        setSelectedLocation(item.name);
-        setSelectedBlockId(item.id);
-        setSelectedDistrictId(selectedDistrictForHierarchy?.id);
+        trackDropdownChange(item.name, item.id, selectedDistrictForHierarchy?.id, item.id);
+        updateLocationSelection('Blocks', item.name, item.id, selectedDistrictForHierarchy?.id, item.id, null, 'dropdown_change');
         setShowLocationDropdown(false);
         console.log('Selected block:', item.name, 'ID:', item.id, 'District:', selectedDistrictForHierarchy?.name);
       }
@@ -368,10 +704,8 @@ const DashboardContent = () => {
         setShowLocationDropdown(true); // Keep dropdown open
       } else if (dropdownLevel === 'gps') {
         // User selected a GP, final selection
-        setSelectedLocation(item.name);
-        setSelectedGPId(item.id);
-        setSelectedBlockId(selectedBlockForHierarchy?.id);
-        setSelectedDistrictId(selectedDistrictForHierarchy?.id);
+        trackDropdownChange(item.name, item.id, selectedDistrictForHierarchy?.id, selectedBlockForHierarchy?.id, item.id);
+        updateLocationSelection('GPs', item.name, item.id, selectedDistrictForHierarchy?.id, selectedBlockForHierarchy?.id, item.id, 'dropdown_change');
         setShowLocationDropdown(false);
         console.log('Selected GP:', item.name, 'ID:', item.id, 'Block:', selectedBlockForHierarchy?.name, 'District:', selectedDistrictForHierarchy?.name);
       }
@@ -541,6 +875,36 @@ const DashboardContent = () => {
     fetchDistricts();
   }, []);
 
+  // Ensure complaints year is always current year on mount
+  useEffect(() => {
+    const currentYear = new Date().getFullYear();
+    setSelectedComplaintsYear(currentYear);
+  }, []);
+
+  // Fetch analytics data for overview section when scope, location, or date range changes
+  useEffect(() => {
+    fetchAnalyticsData();
+  }, [activeScope, selectedDistrictId, selectedBlockId, selectedGPId, startDate, endDate]);
+
+  // Fetch complaints chart data when filters change (independent of overview date range)
+  useEffect(() => {
+    // Only fetch if we have the necessary location data loaded
+    if (activeScope === 'State' && districts.length === 0) {
+      return; // Wait for districts to load
+    }
+    if (activeScope === 'Districts' && (!selectedDistrictId || blocks.length === 0)) {
+      return; // Wait for blocks to load
+    }
+    if (activeScope === 'Blocks' && (!selectedBlockId || gramPanchayats.length === 0)) {
+      return; // Wait for GPs to load
+    }
+    if (activeScope === 'GPs' && !selectedGPId) {
+      return; // Wait for GP selection
+    }
+    
+    fetchComplaintsChartData();
+  }, [activeComplaintsFilter, activeScope, selectedDistrictId, selectedBlockId, selectedGPId, selectedComplaintsYear, districts, blocks, gramPanchayats]);
+
   // Update selected location when districts are loaded
   useEffect(() => {
     if (activeScope === 'Districts' && districts.length > 0 && selectedLocation === 'Rajasthan') {
@@ -585,125 +949,384 @@ const DashboardContent = () => {
     };
   }, [showDateDropdown, showLocationDropdown, showComplaintsYearDropdown]);
 
-  const complaintData = [
-    {
-      title: 'Total complaints',
-      value: '3,452',
-      icon: List,
-      color: '#3b82f6',
-      trend: 'up',
-      chartData: {
-        series: [{
-          data: [2800, 3000, 3200, 3452]
-        }],
-        options: {
-          chart: {
-            type: 'area',
-            height: 40,
-            sparkline: { enabled: true }
-          },
-          stroke: { curve: 'smooth', width: 2, colors: ['#3b82f6'] },
-          fill: {
-            type: 'solid',
-            opacity: 0.10,
-            colors: ['#3b82f6']
-          },
-          tooltip: { enabled: false },
-          grid: { show: false },
-          xaxis: { labels: { show: false } },
-          yaxis: { labels: { show: false } }
+  // Get complaint data with real API values
+  const getComplaintData = () => {
+    const counts = calculateComplaintCounts();
+    
+    // Format numbers with commas
+    const formatNumber = (num) => {
+      return num.toLocaleString();
+    };
+
+    return [
+      {
+        title: 'Total complaints',
+        value: loadingAnalytics ? '...' : formatNumber(counts.total),
+        icon: List,
+        color: '#3b82f6',
+        trend: 'up',
+        chartData: {
+          series: [{
+            data: [counts.total * 0.8, counts.total * 0.9, counts.total * 0.95, counts.total]
+          }],
+          options: {
+            chart: {
+              type: 'area',
+              height: 40,
+              sparkline: { enabled: true }
+            },
+            stroke: { curve: 'smooth', width: 2, colors: ['#3b82f6'] },
+            fill: {
+              type: 'solid',
+              opacity: 0.10,
+              colors: ['#3b82f6']
+            },
+            tooltip: { enabled: false },
+            grid: { show: false },
+            xaxis: { labels: { show: false } },
+            yaxis: { labels: { show: false } }
+          }
+        }
+      },
+      {
+        title: 'Open complaints',
+        value: loadingAnalytics ? '...' : formatNumber(counts.open),
+        icon: List,
+        color: '#ef4444',
+        trend: 'up',
+        chartData: {
+          series: [{
+            data: [counts.open * 0.85, counts.open * 0.92, counts.open * 0.97, counts.open]
+          }],
+          options: {
+            chart: {
+              type: 'area',
+              height: 40,
+              sparkline: { enabled: true }
+            },
+            stroke: { curve: 'smooth', width: 2, colors: ['#ef4444'] },
+            fill: {
+              type: 'solid',
+              opacity: 0.10,
+              colors: ['#ef4444']
+            },
+            tooltip: { enabled: false },
+            grid: { show: false },
+            xaxis: { labels: { show: false } },
+            yaxis: { labels: { show: false } }
+          }
+        }
+      },
+      {
+        title: 'Verified complaints',
+        value: loadingAnalytics ? '...' : formatNumber(counts.verified),
+        icon: List,
+        color: '#f97316',
+        trend: 'up',
+        chartData: {
+          series: [{
+            data: [counts.verified * 0.82, counts.verified * 0.89, counts.verified * 0.93, counts.verified]
+          }],
+          options: {
+            chart: {
+              type: 'area',
+              height: 40,
+              sparkline: { enabled: true }
+            },
+            stroke: { curve: 'smooth', width: 2, colors: ['#f97316'] },
+            fill: {
+              type: 'solid',
+              opacity: 0.10,
+              colors: ['#f97316']
+            },
+            tooltip: { enabled: false },
+            grid: { show: false },
+            xaxis: { labels: { show: false } },
+            yaxis: { labels: { show: false } }
+          }
+        }
+      },
+      {
+        title: 'Resolved complaints',
+        value: loadingAnalytics ? '...' : formatNumber(counts.resolved),
+        icon: List,
+        color: '#8b5cf6',
+        trend: 'up',
+        chartData: {
+          series: [{
+            data: [counts.resolved * 0.8, counts.resolved * 0.88, counts.resolved * 0.92, counts.resolved]
+          }],
+          options: {
+            chart: {
+              type: 'area',
+              height: 40,
+              sparkline: { enabled: true }
+            },
+            stroke: { curve: 'smooth', width: 2, colors: ['#8b5cf6'] },
+            fill: {
+              type: 'solid',
+              opacity: 0.10,
+              colors: ['#8b5cf6']
+            },
+            tooltip: { enabled: false },
+            grid: { show: false },
+            xaxis: { labels: { show: false } },
+            yaxis: { labels: { show: false } }
+          }
+        }
+      },
+      {
+        title: 'Disposed complaints',
+        value: loadingAnalytics ? '...' : formatNumber(counts.disposed),
+        icon: List,
+        color: '#10b981',
+        trend: 'up',
+        chartData: {
+          series: [{
+            data: [counts.disposed * 0.75, counts.disposed * 0.85, counts.disposed * 0.9, counts.disposed]
+          }],
+          options: {
+            chart: {
+              type: 'area',
+              height: 40,
+              sparkline: { enabled: true }
+            },
+            stroke: { curve: 'smooth', width: 2, colors: ['#10b981'] },
+            fill: {
+              type: 'solid',
+              opacity: 0.10,
+              colors: ['#10b981']
+            },
+            tooltip: { enabled: false },
+            grid: { show: false },
+            xaxis: { labels: { show: false } },
+            yaxis: { labels: { show: false } }
+          }
         }
       }
-    },
-    {
-      title: 'Open complaints',
-      value: '452',
-      icon: List,
-      color: '#ef4444',
-      trend: 'up',
-      chartData: {
-        series: [{
-          data: [400, 420, 440, 452]
-        }],
-        options: {
-          chart: {
-            type: 'area',
-            height: 40,
-            sparkline: { enabled: true }
-          },
-          stroke: { curve: 'smooth', width: 2, colors: ['#ef4444'] },
-          fill: {
-            type: 'solid',
-            opacity: 0.10,
-            colors: ['#ef4444']
-          },
-          tooltip: { enabled: false },
-          grid: { show: false },
-          xaxis: { labels: { show: false } },
-          yaxis: { labels: { show: false } }
-        }
-      }
-    },
-    {
-      title: 'Verified complaints',
-      value: '3,000',
-      icon: List,
-      color: '#f97316',
-      trend: 'up',
-      chartData: {
-        series: [{
-          data: [2500, 2700, 2800, 3000]
-        }],
-        options: {
-          chart: {
-            type: 'area',
-            height: 40,
-            sparkline: { enabled: true }
-          },
-          stroke: { curve: 'smooth', width: 2, colors: ['#f97316'] },
-          fill: {
-            type: 'solid',
-            opacity: 0.10,
-            colors: ['#f97316']
-          },
-          tooltip: { enabled: false },
-          grid: { show: false },
-          xaxis: { labels: { show: false } },
-          yaxis: { labels: { show: false } }
-        }
-      }
-    },
-    {
-      title: 'Disposed complaints',
-      value: '2,000',
-      icon: List,
-      color: '#10b981',
-      trend: 'up',
-      chartData: {
-        series: [{
-          data: [1500, 1700, 1800, 2000]
-        }],
-        options: {
-          chart: {
-            type: 'area',
-            height: 40,
-            sparkline: { enabled: true }
-          },
-          stroke: { curve: 'smooth', width: 2, colors: ['#10b981'] },
-          fill: {
-            type: 'solid',
-            opacity: 0.10,
-            colors: ['#10b981']
-          },
-          tooltip: { enabled: false },
-          grid: { show: false },
-          xaxis: { labels: { show: false } },
-          yaxis: { labels: { show: false } }
-        }
+    ];
+  };
+
+  const complaintData = getComplaintData();
+
+  // Calculate percentage of complaints closed/resolved
+  const calculateClosedPercentage = () => {
+    const counts = calculateComplaintCounts();
+    
+    console.log('📊 Percentage Calculation Debug:', {
+      total: counts.total,
+      open: counts.open,
+      verified: counts.verified,
+      resolved: counts.resolved,
+      disposed: counts.disposed
+    });
+    
+    if (counts.total === 0) {
+      return 0;
+    }
+    
+    // Calculate percentage: (resolved + disposed / total) * 100
+    const closedCount = counts.resolved + counts.disposed;
+    const percentage = Math.round((closedCount / counts.total) * 100);
+    
+    console.log('📊 Percentage Calculation:', {
+      closedCount,
+      total: counts.total,
+      percentage: `${percentage}%`,
+      calculation: `(${closedCount} / ${counts.total}) * 100 = ${percentage}%`
+    });
+    
+    return percentage;
+  };
+
+  const closedPercentage = calculateClosedPercentage();
+
+  // Generate dynamic x-axis categories based on selected tab and location
+  const getXAxisCategories = () => {
+    if (activeComplaintsFilter === 'Time') {
+      // Show months for the selected year
+      return ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    } else if (activeComplaintsFilter === 'Location') {
+      // Show locations based on current scope
+      switch (activeScope) {
+        case 'State':
+          // State -> show all districts
+          return districts.map(district => district.name);
+        case 'Districts':
+          // District -> show all blocks under that district
+          console.log('🔍 Districts scope debug:', {
+            selectedDistrictId,
+            blocksLength: blocks.length,
+            blocks: blocks.slice(0, 3), // Show first 3 blocks for debugging
+            filteredBlocks: blocks.filter(block => block.district_id === selectedDistrictId)
+          });
+          
+          if (selectedDistrictId) {
+            const filteredBlocks = blocks.filter(block => block.district_id === selectedDistrictId);
+            console.log('📊 Filtered blocks for district:', selectedDistrictId, filteredBlocks);
+            return filteredBlocks.map(block => block.name);
+          }
+          return [];
+        case 'Blocks':
+          // Block -> show all GPs under that block
+          if (selectedBlockId) {
+            return gramPanchayats.filter(gp => gp.block_id === selectedBlockId)
+                                .map(gp => gp.name);
+          }
+          return [];
+        case 'GPs':
+          // GP -> show only that GP
+          if (selectedGPId) {
+            const selectedGP = gramPanchayats.find(gp => gp.id === selectedGPId);
+            return selectedGP ? [selectedGP.name] : [];
+          }
+          return [];
+        default:
+          return districts.map(district => district.name);
       }
     }
-  ];
+    return ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  };
 
+  const xAxisCategories = getXAxisCategories();
+  
+  console.log('📊 X-axis Categories Debug:', {
+    activeComplaintsFilter,
+    activeScope,
+    selectedDistrictId,
+    xAxisCategories,
+    categoriesLength: xAxisCategories.length
+  });
+
+  // Generate dynamic chart data based on x-axis categories and API response
+  const getChartData = () => {
+    const categoryCount = xAxisCategories.length;
+    
+    // Initialize data arrays
+    const openData = Array(categoryCount).fill(0);
+    const closedData = Array(categoryCount).fill(0);
+    const totalData = Array(categoryCount).fill(0);
+    
+    if (!complaintsChartData || !complaintsChartData.response) {
+      return { open: openData, closed: closedData, total: totalData };
+    }
+
+    if (activeComplaintsFilter === 'Time') {
+      // For Time tab: Group data by month
+      complaintsChartData.response.forEach(item => {
+        // Get month from date if available, or distribute evenly
+        // For now, we'll distribute based on location hash to months
+        const monthIndex = Math.abs(item.geo_name?.charCodeAt(0) || 0) % 12;
+        const status = item.status?.toUpperCase();
+        const count = item.count || 0;
+
+        totalData[monthIndex] += count;
+
+        if (status === 'OPEN' || status === 'VERIFIED') {
+          openData[monthIndex] += count;
+        } else if (status === 'RESOLVED' || status === 'CLOSED' || status === 'DISPOSED') {
+          closedData[monthIndex] += count;
+        }
+      });
+    } else if (activeComplaintsFilter === 'Location') {
+      // For Location tab: Group data by geography_name
+      const locationMap = new Map();
+      
+      complaintsChartData.response.forEach(item => {
+        const geoName = item.geography_name || item.geo_name || 'Unknown';
+        const status = item.status?.toUpperCase();
+        const count = item.count || 0;
+
+        if (!locationMap.has(geoName)) {
+          locationMap.set(geoName, { open: 0, closed: 0, total: 0 });
+        }
+
+        const loc = locationMap.get(geoName);
+        loc.total += count;
+
+        if (status === 'OPEN' || status === 'VERIFIED') {
+          loc.open += count;
+        } else if (status === 'RESOLVED' || status === 'CLOSED' || status === 'DISPOSED') {
+          loc.closed += count;
+        }
+      });
+
+      // Debug logging
+      console.log('Location Map:', locationMap);
+      console.log('X-axis Categories:', xAxisCategories);
+      
+      // Map location data to x-axis categories
+      xAxisCategories.forEach((category, index) => {
+        const data = locationMap.get(category);
+        if (data) {
+          openData[index] = data.open;
+          closedData[index] = data.closed;
+          totalData[index] = data.total;
+          console.log(`Mapped ${category}:`, data);
+        } else {
+          console.log(`No data found for category: ${category}`);
+        }
+      });
+    }
+    
+    return {
+      open: openData,
+      closed: closedData,
+      total: totalData
+    };
+  };
+
+  const chartData = getChartData();
+
+  // Get performance data based on current scope
+  const getPerformanceData = () => {
+    switch (activeScope) {
+      case 'State':
+        // State -> show all districts
+        return districts.map(district => ({
+          name: district.name,
+          id: district.id,
+          type: 'District'
+        }));
+      case 'Districts':
+        // District -> show all blocks under that district
+        if (selectedDistrictId) {
+          return blocks.filter(block => block.district_id === selectedDistrictId)
+                      .map(block => ({
+                        name: block.name,
+                        id: block.id,
+                        type: 'Block'
+                      }));
+        }
+        return [];
+      case 'Blocks':
+        // Block -> show all GPs under that block
+        if (selectedBlockId) {
+          return gramPanchayats.filter(gp => gp.block_id === selectedBlockId)
+                              .map(gp => ({
+                                name: gp.name,
+                                id: gp.id,
+                                type: 'GP'
+                              }));
+        }
+        return [];
+      case 'GPs':
+        // GP -> show only that GP
+        if (selectedGPId) {
+          const selectedGP = gramPanchayats.find(gp => gp.id === selectedGPId);
+          return selectedGP ? [{
+            name: selectedGP.name,
+            id: selectedGP.id,
+            type: 'GP'
+          }] : [];
+        }
+        return [];
+      default:
+        return [];
+    }
+  };
+
+  const performanceData = getPerformanceData();
 
   return (
     <div>
@@ -894,12 +1517,10 @@ const DashboardContent = () => {
                       onClick={() => {
                         if (activeScope === 'Districts') {
                           // Direct selection for districts
-                          setSelectedLocation(location.name);
-                          setSelectedDistrictId(location.id);
-                          setSelectedBlockId(null);
-                          setSelectedGPId(null);
+                          trackDropdownChange(location.name, location.id, location.id);
+                          updateLocationSelection('Districts', location.name, location.id, location.id, null, null, 'dropdown_change');
                           console.log('Selected district ID:', location.id, 'Name:', location.name);
-                        setShowLocationDropdown(false);
+                          setShowLocationDropdown(false);
                         } else if (activeScope === 'Blocks' || activeScope === 'GPs') {
                           // Use hierarchical selection for blocks and GPs
                           handleHierarchicalSelection(location);
@@ -933,10 +1554,11 @@ const DashboardContent = () => {
           color: '#6B7280',
           fontWeight: '600'
         }}>
-          {activeScope === 'State' ? selectedLocation : `Rajashtan / ${selectedLocation}`}
+          {activeScope === 'State' ? selectedLocation : `Rajasthan / ${selectedLocation}`}
         </span>
       </div>
 
+     
       {/* Overview Section */}
       <div style={{
         backgroundColor: 'white',
@@ -1127,10 +1749,12 @@ const DashboardContent = () => {
                 }}>
                   <button
                           onClick={() => {
-                            setStartDate(null);
-                            setEndDate(null);
+                            const today = new Date();
+                            const todayStr = today.toISOString().split('T')[0];
+                            setStartDate(todayStr);
+                            setEndDate(todayStr);
                             setIsCustomRange(false);
-                            setSelectedDateRange('Last 30 Days');
+                            setSelectedDateRange('Today');
                           }}
                     style={{
                       padding: '8px 16px',
@@ -1212,85 +1836,184 @@ const DashboardContent = () => {
           </div>
         </div>
 
+        {/* Loading/Error State */}
+        {analyticsError && (
+          <div style={{
+            padding: '16px',
+            backgroundColor: '#fee2e2',
+            border: '1px solid #fecaca',
+            borderRadius: '8px',
+            color: '#dc2626',
+            fontSize: '14px',
+            marginBottom: '16px'
+          }}>
+            <strong>Error:</strong> {analyticsError}
+          </div>
+        )}
+
         {/* Data Cards and Progress Summary */}
         <div style={{
           display: 'flex',
-          gap: '24px'
+          gap: '24px',
+          opacity: loadingAnalytics ? 0.6 : 1,
+          transition: 'opacity 0.3s'
         }}>
           {/* Data Cards */}
           <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))',
+            display: 'flex',
+            flexDirection: 'column',
             gap: '12px',
             width: '60%'
           }}>
-            {complaintData.map((item, index) => (
-              <div key={index} style={{
-                backgroundColor: 'white',
-                padding: '16px',
-                borderRadius: '12px',
-                border: '1px solid #e5e7eb',
-                position: 'relative'
-              }}>
-                {/* Info icon */}
-                <div style={{
-                  position: 'absolute',
-                  top: '12px',
-                  right: '12px'
+            {/* Top Row - 2 cards */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))',
+              gap: '12px'
+            }}>
+              {complaintData.slice(0, 2).map((item, index) => (
+                <div key={index} style={{
+                  backgroundColor: 'white',
+                  padding: '16px',
+                  borderRadius: '12px',
+                  border: '1px solid #e5e7eb',
+                  position: 'relative'
                 }}>
-                  <Info style={{ width: '16px', height: '16px', color: '#9ca3af' }} />
-                </div>
-
-                {/* Card content */}
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  marginBottom: '12px'
-                }}>
+                  {/* Info icon */}
                   <div style={{
-                    width: '8px',
-                    height: '8px',
-                    borderRadius: '50%',
-                    backgroundColor: item.color
-                  }}></div>
+                    position: 'absolute',
+                    top: '12px',
+                    right: '12px'
+                  }}>
+                    <Info style={{ width: '16px', height: '16px', color: '#9ca3af' }} />
+                  </div>
+
+                  {/* Card content */}
                   <div style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '6px'
+                    gap: '8px',
+                    marginBottom: '12px'
                   }}>
-                    <item.icon style={{ width: '16px', height: '16px', color: '#6b7280' }} />
-                    <span style={{
-                      fontSize: '14px',
-                      color: '#6b7280',
-                      fontWeight: '500'
+                    <div style={{
+                      width: '8px',
+                      height: '8px',
+                      borderRadius: '50%',
+                      backgroundColor: item.color
+                    }}></div>
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
                     }}>
-                      {item.title}
-                    </span>
+                      <item.icon style={{ width: '16px', height: '16px', color: '#6b7280' }} />
+                      <span style={{
+                        fontSize: '14px',
+                        color: '#6b7280',
+                        fontWeight: '500'
+                      }}>
+                        {item.title}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Value */}
+                  <div style={{
+                    fontSize: '32px',
+                    fontWeight: '700',
+                    color: '#111827',
+                    marginBottom: '12px'
+                  }}>
+                    {item.value}
+                  </div>
+
+                  {/* Mini chart */}
+                  <div style={{ height: '40px' }}>
+                    <Chart
+                      options={item.chartData.options}
+                      series={item.chartData.series}
+                      type="area"
+                      height={40}
+                    />
                   </div>
                 </div>
+              ))}
+            </div>
 
-                {/* Value */}
-                <div style={{
-                  fontSize: '32px',
-                  fontWeight: '700',
-                  color: '#111827',
-                  marginBottom: '12px'
+            {/* Bottom Row - 3 cards */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, minmax(180px, 1fr))',
+              gap: '12px'
+            }}>
+              {complaintData.slice(2, 5).map((item, index) => (
+                <div key={index + 2} style={{
+                  backgroundColor: 'white',
+                  padding: '16px',
+                  borderRadius: '12px',
+                  border: '1px solid #e5e7eb',
+                  position: 'relative'
                 }}>
-                  {item.value}
-                </div>
+                  {/* Info icon */}
+                  <div style={{
+                    position: 'absolute',
+                    top: '12px',
+                    right: '12px'
+                  }}>
+                    <Info style={{ width: '16px', height: '16px', color: '#9ca3af' }} />
+                  </div>
 
-                {/* Mini chart */}
-                <div style={{ height: '40px' }}>
-                  <Chart
-                    options={item.chartData.options}
-                    series={item.chartData.series}
-                    type="area"
-                    height={40}
-                  />
+                  {/* Card content */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    marginBottom: '12px'
+                  }}>
+                    <div style={{
+                      width: '8px',
+                      height: '8px',
+                      borderRadius: '50%',
+                      backgroundColor: item.color
+                    }}></div>
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}>
+                      <item.icon style={{ width: '16px', height: '16px', color: '#6b7280' }} />
+                      <span style={{
+                        fontSize: '14px',
+                        color: '#6b7280',
+                        fontWeight: '500'
+                      }}>
+                        {item.title}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Value */}
+                  <div style={{
+                    fontSize: '32px',
+                    fontWeight: '700',
+                    color: '#111827',
+                    marginBottom: '12px'
+                  }}>
+                    {item.value}
+                  </div>
+
+                  {/* Mini chart */}
+                  <div style={{ height: '40px' }}>
+                    <Chart
+                      options={item.chartData.options}
+                      series={item.chartData.series}
+                      type="area"
+                      height={40}
+                    />
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
 
           {/* Progress Summary */}
@@ -1339,7 +2062,11 @@ const DashboardContent = () => {
               height: '250px',
               width: '100%',
             }}>
-              <SegmentedGauge percentage={70} label="Complaints closed" />
+              <SegmentedGauge 
+                complaintData={loadingAnalytics ? {open: 0, verified: 0, resolved: 0, disposed: 0} : calculateComplaintCounts()}
+                percentage={loadingAnalytics ? 0 : closedPercentage} 
+                label="Complaints closed" 
+              />
             </div>
           </div>
         </div>
@@ -1495,6 +2222,22 @@ const DashboardContent = () => {
           backgroundColor: '#e5e7eb',
           marginBottom: '20px'
         }}></div>
+
+        {/* Loading/Error State */}
+        {complaintsChartError && (
+          <div style={{
+            padding: '16px',
+            backgroundColor: '#fee2e2',
+            border: '1px solid #fecaca',
+            borderRadius: '8px',
+            color: '#dc2626',
+            fontSize: '14px',
+            marginBottom: '16px'
+          }}>
+            <strong>Error:</strong> {complaintsChartError}
+          </div>
+        )}
+
         {/* Legend */}
         <div style={{
           display: 'flex',
@@ -1532,7 +2275,11 @@ const DashboardContent = () => {
         </div>
 
         {/* Bar Chart */}
-        <div style={{ height: '300px' }}>
+        <div style={{ 
+          height: '300px',
+          opacity: loadingComplaintsChart ? 0.6 : 1,
+          transition: 'opacity 0.3s'
+        }}>
           <Chart
             options={{
               chart: {
@@ -1556,14 +2303,14 @@ const DashboardContent = () => {
                 colors: ['transparent']
               },
               xaxis: {
-                categories: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+                categories: xAxisCategories
               },
               yaxis: {
                 title: {
                   text: 'Number of Complaints'
                 },
                 min: 0,
-                max: 300,
+                max: 150,
                 tickAmount: 5
               },
               fill: {
@@ -1580,15 +2327,15 @@ const DashboardContent = () => {
             series={[
               {
                 name: 'Open',
-                data: [45, 52, 38, 42, 55, 48, 62, 58, 51, 47, 53, 49]
+                data: chartData.open
               },
               {
                 name: 'Closed',
-                data: [120, 135, 110, 125, 140, 130, 155, 145, 135, 125, 140, 135]
+                data: chartData.closed
               },
               {
                 name: 'Total',
-                data: [165, 187, 148, 167, 195, 178, 217, 203, 186, 172, 193, 184]
+                data: chartData.total
               }
             ]}
             type="bar"
@@ -1727,62 +2474,69 @@ const DashboardContent = () => {
                 </tr>
               </thead>
               <tbody>
-                {[
-                  { district: 'District A', response: '3 days', completion: '56%', growth: '+10%', growthColor: '#10b981' },
-                  { district: 'District B', response: '3.3 days', completion: '56%', growth: '0%', growthColor: '#6b7280' },
-                  { district: 'District C', response: '4 days', completion: '56%', growth: '-10%', growthColor: '#ef4444' },
-                  { district: 'District D', response: '4.5 days', completion: '56%', growth: '+5%', growthColor: '#10b981' },
-                  { district: 'District E', response: '5 days', completion: '56%', growth: '+2%', growthColor: '#10b981' }
-                ].map((row, index) => (
-                  <tr key={index} style={{
-                    borderBottom: '1px solid #f3f4f6'
-                  }}>
-                    <td style={{
-                      padding: '12px',
+                {performanceData.length === 0 ? (
+                  <tr>
+                    <td colSpan="5" style={{
+                      padding: '20px',
+                      textAlign: 'center',
                       fontSize: '14px',
-                      color: '#374151'
+                      color: '#6b7280'
                     }}>
-                      {row.district}
-                    </td>
-                    <td style={{
-                      padding: '12px',
-                      fontSize: '14px',
-                      color: '#374151'
-                    }}>
-                      {row.response}
-                    </td>
-                    <td style={{
-                      padding: '12px',
-                      fontSize: '14px',
-                      color: '#374151'
-                    }}>
-                      {row.completion}
-                    </td>
-                    <td style={{
-                      padding: '12px',
-                      fontSize: '14px',
-                      color: row.growthColor,
-                      fontWeight: '500'
-                    }}>
-                      {row.growth}
-                    </td>
-                    <td style={{
-                      padding: '12px'
-                    }}>
-                      <button style={{
-                        padding: '6px 12px',
-                        backgroundColor: '#f3f4f6',
-                        border: '1px solid #d1d5db',
-                        borderRadius: '8px',
-                        fontSize: '12px',
-                        color: '#374151',
-                        cursor: 'pointer'
-                      }}>
-                        Send notice
-                      </button>
+                      No data available
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  performanceData.map((item, index) => (
+                    <tr key={item.id || index} style={{
+                      borderBottom: '1px solid #f3f4f6'
+                    }}>
+                      <td style={{
+                        padding: '12px',
+                        fontSize: '14px',
+                        color: '#374151',
+                        fontWeight: '500'
+                      }}>
+                        {item.name}
+                      </td>
+                      <td style={{
+                        padding: '12px',
+                        fontSize: '14px',
+                        color: '#374151'
+                      }}>
+                        -
+                      </td>
+                      <td style={{
+                        padding: '12px',
+                        fontSize: '14px',
+                        color: '#374151'
+                      }}>
+                        -
+                      </td>
+                      <td style={{
+                        padding: '12px',
+                        fontSize: '14px',
+                        color: '#374151'
+                      }}>
+                        -
+                      </td>
+                      <td style={{
+                        padding: '12px'
+                      }}>
+                        <button style={{
+                          padding: '6px 12px',
+                          backgroundColor: '#f3f4f6',
+                          border: '1px solid #d1d5db',
+                          borderRadius: '8px',
+                          fontSize: '12px',
+                          color: '#374151',
+                          cursor: 'pointer'
+                        }}>
+                          Send notice
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
