@@ -1,5 +1,26 @@
 {
   "rewrites": [
-    { "source": "/api/:path*", "destination": "http://139.59.34.99:8000/api/:path*" }
+    {
+      "source": "/api/(.*)",
+      "destination": "http://139.59.34.99:8000/api/$1"
+    }
+  ],
+  "builds": [
+    {
+      "src": "vite.config.js",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "dist"
+      }
+    }
+  ],
+  "routes": [
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/.*",
+      "dest": "/index.html"
+    }
   ]
 }
