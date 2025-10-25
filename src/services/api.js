@@ -1,7 +1,10 @@
 import axios from 'axios';
 
 // Configure your API base URL
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://139.59.34.99:8000/api/v1';
+// In production (Vercel), use the proxied endpoint
+// In development, use the direct backend URL
+const API_BASE_URL = import.meta.env.VITE_API_URL || 
+  (import.meta.env.PROD ? '/api/v1' : 'http://139.59.34.99:8000/api/v1');
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
