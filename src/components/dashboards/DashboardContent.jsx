@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { MapPin, ChevronDown, Calendar, List, Info, TrendingUp } from 'lucide-react';
 import Chart from 'react-apexcharts';
 import number1 from '../../assets/images/number1.png';
@@ -233,6 +233,19 @@ const DashboardContent = () => {
   const [loadingComplaintsChart, setLoadingComplaintsChart] = useState(false);
   const [complaintsChartError, setComplaintsChartError] = useState(null);
 
+  // Performance data state
+  const [performanceApiData, setPerformanceApiData] = useState(null);
+  const [previousMonthApiData, setPreviousMonthApiData] = useState(null);
+  const [loadingPerformance, setLoadingPerformance] = useState(false);
+  const [performanceError, setPerformanceError] = useState(null);
+  const [activePerformanceTab, setActivePerformanceTab] = useState('starPerformers');
+  const [top3Scope, setTop3Scope] = useState('District');
+  const [showTop3Dropdown, setShowTop3Dropdown] = useState(false);
+  const [top3ApiData, setTop3ApiData] = useState(null);
+  const [loadingTop3, setLoadingTop3] = useState(false);
+  const [top3Error, setTop3Error] = useState(null);
+  
+
   // Log current location info whenever it changes
   useEffect(() => {
     const locationInfo = getCurrentLocationInfo();
@@ -325,7 +338,7 @@ const DashboardContent = () => {
   };
 
   // Fetch Analytics Data from API
-  const fetchAnalyticsData = async () => {
+  const fetchAnalyticsData = useCallback(async () => {
     try {
       setLoadingAnalytics(true);
       setAnalyticsError(null);
@@ -452,10 +465,10 @@ const DashboardContent = () => {
     } finally {
       setLoadingAnalytics(false);
     }
-  };
+  }, [activeScope, selectedLocation, selectedDistrictId, selectedBlockId, selectedGPId, startDate, endDate]);
 
   // Fetch Complaints Chart Data from API
-  const fetchComplaintsChartData = async () => {
+  const fetchComplaintsChartData = useCallback(async () => {
     try {
       setLoadingComplaintsChart(true);
       setComplaintsChartError(null);
@@ -530,7 +543,7 @@ const DashboardContent = () => {
     } finally {
       setLoadingComplaintsChart(false);
     }
-  };
+  }, [activeScope, selectedDistrictId, selectedBlockId, selectedGPId, selectedComplaintsYear]);
 
   // Calculate complaint counts from analytics data
   const calculateComplaintCounts = () => {
@@ -557,11 +570,11 @@ const DashboardContent = () => {
       const status = item.status?.toUpperCase();
       const count = item.count || 0;
 
-      console.log('🔍 Processing complaint item:', {
-        status: status,
-        count: count,
-        originalStatus: item.status
-      });
+      // console.log('🔍 Processing complaint item:', {
+      //   status: status,
+      //   count: count,
+      //   originalStatus: item.status
+      // });
 
       counts.total += count;
 
@@ -578,7 +591,7 @@ const DashboardContent = () => {
         case 'CLOSED':
         case 'DISPOSED':
           counts.disposed += count;
-          console.log('✅ Added to disposed:', count);
+          // console.log('✅ Added to disposed:', count);
           break;
         default:
           console.warn('Unknown status:', status);
@@ -646,6 +659,7 @@ const DashboardContent = () => {
     } else if (scope === 'Blocks') {
       // For blocks, start with districts level
       fetchBlocks();
+      fetchGramPanchayats();
       updateLocationSelection('Blocks', 'Select District', null, null, null, null, 'tab_change');
       setDropdownLevel('districts');
       setSelectedDistrictForHierarchy(null);
@@ -725,11 +739,27 @@ const DashboardContent = () => {
       setSelectedDateRange(range.label);
       
       const today = new Date();
-      const start = new Date(today);
-      start.setDate(today.getDate() - range.days);
       
-      setStartDate(start.toISOString().split('T')[0]);
-      setEndDate(today.toISOString().split('T')[0]);
+      // For "Today" and "Yesterday", both start and end dates should be the same
+      if (range.value === 'today') {
+        // Today: start = today, end = today
+        setStartDate(today.toISOString().split('T')[0]);
+        setEndDate(today.toISOString().split('T')[0]);
+      } else if (range.value === 'yesterday') {
+        // Yesterday: start = yesterday, end = yesterday
+        const yesterday = new Date(today);
+        yesterday.setDate(today.getDate() - 1);
+        setStartDate(yesterday.toISOString().split('T')[0]);
+        setEndDate(yesterday.toISOString().split('T')[0]);
+      } else {
+        // For ranges like "Last 7 Days", "Last 30 Days"
+        // start = today - N days, end = today
+        const start = new Date(today);
+        start.setDate(today.getDate() - range.days);
+        setStartDate(start.toISOString().split('T')[0]);
+        setEndDate(today.toISOString().split('T')[0]);
+      }
+      
       setShowDateDropdown(false);
     }
   };
@@ -881,10 +911,199 @@ const DashboardContent = () => {
     setSelectedComplaintsYear(currentYear);
   }, []);
 
+  // Fetch Performance Data from API (both current and previous month)
+  const fetchPerformanceData = useCallback(async () => {
+    try {
+      setLoadingPerformance(true);
+      setPerformanceError(null);
+
+      console.log('🔄 ===== PERFORMANCE API CALL =====');
+      console.log('📍 Current State:', {
+        activeScope,
+        selectedDistrictId,
+        selectedBlockId,
+        selectedGPId
+      });
+
+      // Build query parameters based on selected scope
+      const params = new URLSearchParams();
+
+      // Determine level based on active scope
+      let level = 'DISTRICT'; // Default for State scope
+      if (activeScope === 'Districts') {
+        level = 'BLOCK';
+      } else if (activeScope === 'Blocks') {
+        level = 'VILLAGE';
+      } else if (activeScope === 'GPs') {
+        level = 'VILLAGE';
+      }
+      params.append('level', level);
+      console.log('📊 Level:', level);
+
+      // Add geography IDs based on selection
+      if (activeScope === 'Districts' && selectedDistrictId) {
+        params.append('district_id', selectedDistrictId);
+        console.log('🏙️  District ID:', selectedDistrictId);
+      } else if (activeScope === 'Blocks' && selectedBlockId) {
+        params.append('block_id', selectedBlockId);
+        console.log('🏘️  Block ID:', selectedBlockId);
+      } else if (activeScope === 'GPs' && selectedGPId) {
+        params.append('gp_id', selectedGPId);
+        console.log('🏡 GP ID:', selectedGPId);
+      }
+
+      // Calculate current month date range
+      const now = new Date();
+      const currentYear = now.getFullYear();
+      const currentMonth = now.getMonth() + 1; // getMonth() returns 0-11, so add 1
+      const currentDay = now.getDate();
+      
+      const currentStartDate = `${currentYear}-${currentMonth.toString().padStart(2, '0')}-01`;
+      const currentEndDate = `${currentYear}-${currentMonth.toString().padStart(2, '0')}-${currentDay.toString().padStart(2, '0')}`;
+      
+      // Calculate previous month date range
+      const previousMonth = currentMonth === 1 ? 12 : currentMonth - 1;
+      const previousYear = currentMonth === 1 ? currentYear - 1 : currentYear;
+      const previousMonthDays = new Date(previousYear, previousMonth, 0).getDate();
+      
+      const previousStartDate = `${previousYear}-${previousMonth.toString().padStart(2, '0')}-01`;
+      const previousEndDate = `${previousYear}-${previousMonth.toString().padStart(2, '0')}-${previousMonthDays}`;
+      
+      console.log('📅 Current Month Range:', currentStartDate, 'to', currentEndDate);
+      console.log('📅 Previous Month Range:', previousStartDate, 'to', previousEndDate);
+
+      // Fetch current month data
+      const currentParams = new URLSearchParams(params);
+      currentParams.append('start_date', currentStartDate);
+      currentParams.append('end_date', currentEndDate);
+      
+      const currentUrl = `/complaints/analytics/geo?${currentParams.toString()}`;
+      console.log('🌐 Current Month API URL:', currentUrl);
+      
+      const currentResponse = await apiClient.get(currentUrl);
+      console.log('✅ Current Month API Response:', currentResponse.data);
+      
+      // Fetch previous month data
+      const previousParams = new URLSearchParams(params);
+      previousParams.append('start_date', previousStartDate);
+      previousParams.append('end_date', previousEndDate);
+      
+      const previousUrl = `/complaints/analytics/geo?${previousParams.toString()}`;
+      console.log('🌐 Previous Month API URL:', previousUrl);
+      
+      const previousResponse = await apiClient.get(previousUrl);
+      console.log('✅ Previous Month API Response:', previousResponse.data);
+      
+      setPerformanceApiData(currentResponse.data);
+      setPreviousMonthApiData(previousResponse.data);
+      console.log('🔄 ===== END PERFORMANCE API CALL =====\n');
+      
+    } catch (error) {
+      console.error('❌ ===== PERFORMANCE API ERROR =====');
+      console.error('Error Type:', error.name);
+      console.error('Error Message:', error.message);
+      console.error('Error Details:', error.response?.data || error);
+      console.error('Status Code:', error.response?.status);
+      console.error('🔄 ===== END PERFORMANCE API ERROR =====\n');
+      
+      setPerformanceError(error.message || 'Failed to fetch performance data');
+      setPerformanceApiData(null);
+      setPreviousMonthApiData(null);
+    } finally {
+      setLoadingPerformance(false);
+    }
+  }, [activeScope, selectedDistrictId, selectedBlockId, selectedGPId]);
+
+  // Fetch Top 3 data from dedicated API
+  const fetchTop3Data = useCallback(async () => {
+    try {
+      setLoadingTop3(true);
+      setTop3Error(null);
+
+      console.log('🔄 ===== TOP 3 API CALL =====');
+      console.log('📍 Current State:', {
+        top3Scope,
+        selectedDistrictId,
+        selectedBlockId,
+        selectedGPId
+      });
+
+      // Calculate current month date range
+      const now = new Date();
+      const currentYear = now.getFullYear();
+      const currentMonth = now.getMonth() + 1;
+      const lastDayOfMonth = new Date(currentYear, currentMonth, 0).getDate();
+      
+      const startDate = `${currentYear}-${currentMonth.toString().padStart(2, '0')}-01`;
+      const endDate = `${currentYear}-${currentMonth.toString().padStart(2, '0')}-${lastDayOfMonth}`;
+      
+      // Map scope to API level
+      let level = 'DISTRICT';
+      if (top3Scope === 'Block') {
+        level = 'BLOCK';
+      } else if (top3Scope === 'GP') {
+        level = 'VILLAGE';
+      }
+      
+      console.log('📅 Date Range:', startDate, 'to', endDate);
+      console.log('📊 Level:', level);
+
+      // Build query parameters
+      const params = new URLSearchParams();
+      params.append('start_date', startDate);
+      params.append('end_date', endDate);
+      params.append('n', '5'); // Get top 5 but we'll only use top 3
+      params.append('level', level);
+
+      // Top 3 API works independently - no need for district_id or block_id parameters
+
+      const url = `/complaints/analytics/top-n?${params.toString()}`;
+      console.log('🌐 Top 3 API URL:', url);
+      
+      const response = await apiClient.get(url);
+      
+      console.log('✅ Top 3 API Response:', {
+        status: response.status,
+        statusText: response.statusText,
+        data: response.data
+      });
+      
+      setTop3ApiData(response.data);
+      console.log('🔄 ===== END TOP 3 API CALL =====\n');
+      
+    } catch (error) {
+      console.error('❌ ===== TOP 3 API ERROR =====');
+      console.error('Error Type:', error.name);
+      console.error('Error Message:', error.message);
+      console.error('Error Details:', error.response?.data || error);
+      console.error('Status Code:', error.response?.status);
+      console.error('🔄 ===== END TOP 3 API ERROR =====\n');
+      
+      setTop3Error(error.message || 'Failed to fetch top 3 data');
+      setTop3ApiData(null);
+    } finally {
+      setLoadingTop3(false);
+    }
+  }, [top3Scope, selectedDistrictId, selectedBlockId, selectedGPId]);
+
   // Fetch analytics data for overview section when scope, location, or date range changes
   useEffect(() => {
+    // Only fetch if we have the necessary location data loaded
+    if (activeScope === 'State' && districts.length === 0) {
+      return; // Wait for districts to load
+    }
+    if (activeScope === 'Districts' && (!selectedDistrictId || blocks.length === 0)) {
+      return; // Wait for blocks to load
+    }
+    if (activeScope === 'Blocks' && (!selectedBlockId || gramPanchayats.length === 0)) {
+      return; // Wait for GPs to load
+    }
+    if (activeScope === 'GPs' && !selectedGPId) {
+      return; // Wait for GP selection
+    }
+    
     fetchAnalyticsData();
-  }, [activeScope, selectedDistrictId, selectedBlockId, selectedGPId, startDate, endDate]);
+  }, [activeScope, selectedLocation, selectedDistrictId, selectedBlockId, selectedGPId, startDate, endDate, districts, blocks, gramPanchayats]);
 
   // Fetch complaints chart data when filters change (independent of overview date range)
   useEffect(() => {
@@ -904,6 +1123,36 @@ const DashboardContent = () => {
     
     fetchComplaintsChartData();
   }, [activeComplaintsFilter, activeScope, selectedDistrictId, selectedBlockId, selectedGPId, selectedComplaintsYear, districts, blocks, gramPanchayats]);
+
+  // Fetch performance data when scope or location changes
+  useEffect(() => {
+    // Only fetch if we have the necessary location data loaded
+    if (activeScope === 'State' && districts.length === 0) {
+      return; // Wait for districts to load
+    }
+    if (activeScope === 'Districts' && (!selectedDistrictId || blocks.length === 0)) {
+      return; // Wait for blocks to load
+    }
+    if (activeScope === 'Blocks' && (!selectedBlockId || gramPanchayats.length === 0)) {
+      return; // Wait for GPs to load
+    }
+    if (activeScope === 'GPs' && !selectedGPId) {
+      return; // Wait for GP selection
+    }
+    
+    fetchPerformanceData();
+  }, [activeScope, selectedDistrictId, selectedBlockId, selectedGPId, districts, blocks, gramPanchayats]);
+
+  // Fetch Top 3 data when scope changes
+  useEffect(() => {
+    console.log('🔄 Top 3 useEffect triggered:', {
+      top3Scope
+    });
+    
+    // Always fetch data based on top3Scope - API works independently
+    fetchTop3Data();
+  }, [top3Scope, fetchTop3Data]);
+
 
   // Update selected location when districts are loaded
   useEffect(() => {
@@ -941,13 +1190,16 @@ const DashboardContent = () => {
       if (showComplaintsYearDropdown && !event.target.closest('[data-complaints-year-dropdown]')) {
         setShowComplaintsYearDropdown(false);
       }
+      if (showTop3Dropdown && !event.target.closest('[data-top3-dropdown]')) {
+        setShowTop3Dropdown(false);
+      }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [showDateDropdown, showLocationDropdown, showComplaintsYearDropdown]);
+  }, [showDateDropdown, showLocationDropdown, showComplaintsYearDropdown, showTop3Dropdown]);
 
   // Get complaint data with real API values
   const getComplaintData = () => {
@@ -1113,13 +1365,13 @@ const DashboardContent = () => {
   const calculateClosedPercentage = () => {
     const counts = calculateComplaintCounts();
     
-    console.log('📊 Percentage Calculation Debug:', {
-      total: counts.total,
-      open: counts.open,
-      verified: counts.verified,
-      resolved: counts.resolved,
-      disposed: counts.disposed
-    });
+    // console.log('📊 Percentage Calculation Debug:', {
+    //   total: counts.total,
+    //   open: counts.open,
+    //   verified: counts.verified,
+    //   resolved: counts.resolved,
+    //   disposed: counts.disposed
+    // });
     
     if (counts.total === 0) {
       return 0;
@@ -1129,12 +1381,12 @@ const DashboardContent = () => {
     const closedCount = counts.resolved + counts.disposed;
     const percentage = Math.round((closedCount / counts.total) * 100);
     
-    console.log('📊 Percentage Calculation:', {
-      closedCount,
-      total: counts.total,
-      percentage: `${percentage}%`,
-      calculation: `(${closedCount} / ${counts.total}) * 100 = ${percentage}%`
-    });
+    // console.log('📊 Percentage Calculation:', {
+    //   closedCount,
+    //   total: counts.total,
+    //   percentage: `${percentage}%`,
+    //   calculation: `(${closedCount} / ${counts.total}) * 100 = ${percentage}%`
+    // });
     
     return percentage;
   };
@@ -1278,55 +1530,288 @@ const DashboardContent = () => {
 
   const chartData = getChartData();
 
+  // Process performance API data and calculate metrics
+  const processPerformanceData = () => {
+    if (!performanceApiData || !performanceApiData.response) {
+      return new Map();
+    }
+
+    const geographyMap = new Map();
+
+    // Group data by geography_name
+    performanceApiData.response.forEach(item => {
+      const geoName = item.geography_name || 'Unknown';
+      const status = item.status?.toUpperCase();
+      const count = item.count || 0;
+      const avgResolutionTime = item.average_resolution_time || 0;
+
+      if (!geographyMap.has(geoName)) {
+        geographyMap.set(geoName, {
+          name: geoName,
+          id: item.geography_id,
+          totalComplaints: 0,
+          closedComplaints: 0,
+          totalResolutionTime: 0,
+          statusCounts: {}
+        });
+      }
+
+      const geo = geographyMap.get(geoName);
+      geo.totalComplaints += count;
+      geo.totalResolutionTime += avgResolutionTime;
+      geo.statusCounts[status] = count;
+
+      // Count closed complaints (RESOLVED, CLOSED, DISPOSED)
+      if (status === 'RESOLVED' || status === 'CLOSED' || status === 'DISPOSED') {
+        geo.closedComplaints += count;
+      }
+    });
+
+    // Calculate metrics for each geography
+    geographyMap.forEach((geo, name) => {
+      // Calculate average resolution time in days
+      const avgResolutionTimeDays = geo.totalResolutionTime > 0 
+        ? (geo.totalResolutionTime / 86400) // Convert seconds to days
+        : 0;
+      
+      geo.avgResolutionTimeDays = Math.round(avgResolutionTimeDays * 10) / 10; // Round to 1 decimal
+      
+      // Calculate completion percentage
+      // Formula: (RESOLVED complaints) / (OPEN + RESOLVED + VERIFIED + CLOSED) * 100
+      const resolvedCount = geo.statusCounts.RESOLVED || 0;
+      const totalRelevantComplaints = (geo.statusCounts.OPEN || 0) + 
+                                    (geo.statusCounts.RESOLVED || 0) + 
+                                    (geo.statusCounts.VERIFIED || 0) + 
+                                    (geo.statusCounts.CLOSED || 0);
+      
+      geo.completionPercentage = totalRelevantComplaints > 0 
+        ? Math.round((resolvedCount / totalRelevantComplaints) * 100)
+        : 0;
+      
+      // Debug logging for completion calculation
+      console.log(`📊 Completion Calculation for ${geo.name}:`, {
+        resolved: resolvedCount,
+        open: geo.statusCounts.OPEN || 0,
+        verified: geo.statusCounts.VERIFIED || 0,
+        closed: geo.statusCounts.CLOSED || 0,
+        totalRelevant: totalRelevantComplaints,
+        completion: geo.completionPercentage + '%'
+      });
+    });
+
+    return geographyMap;
+  };
+
+  // Process previous month data and calculate growth
+  const processPreviousMonthData = () => {
+    if (!previousMonthApiData || !previousMonthApiData.response) {
+      return new Map();
+    }
+
+    const geographyMap = new Map();
+
+    // Group data by geography_name
+    previousMonthApiData.response.forEach(item => {
+      const geoName = item.geography_name || 'Unknown';
+      const status = item.status?.toUpperCase();
+      const count = item.count || 0;
+
+      if (!geographyMap.has(geoName)) {
+        geographyMap.set(geoName, {
+          name: geoName,
+          id: item.geography_id,
+          statusCounts: {}
+        });
+      }
+
+      const geo = geographyMap.get(geoName);
+      geo.statusCounts[status] = count;
+    });
+
+    // Calculate completion percentage for each geography
+    geographyMap.forEach((geo, name) => {
+      const resolvedCount = geo.statusCounts.RESOLVED || 0;
+      const totalRelevantComplaints = (geo.statusCounts.OPEN || 0) + 
+                                    (geo.statusCounts.RESOLVED || 0) + 
+                                    (geo.statusCounts.VERIFIED || 0) + 
+                                    (geo.statusCounts.CLOSED || 0);
+      
+      geo.completionPercentage = totalRelevantComplaints > 0 
+        ? Math.round((resolvedCount / totalRelevantComplaints) * 100)
+        : 0;
+    });
+
+    return geographyMap;
+  };
+
+  // Calculate growth percentage
+  const calculateGrowth = (currentCompletion, previousCompletion) => {
+    if (previousCompletion === 0) {
+      return currentCompletion > 0 ? 100 : 0; // If no previous data, growth is 100% if current > 0
+    }
+    const growth = currentCompletion - previousCompletion;
+    
+    // Debug logging for growth calculation
+    console.log('📈 Growth Calculation:', {
+      currentCompletion,
+      previousCompletion,
+      growth: `${growth}%`
+    });
+    
+    return growth;
+  };
+
+  // Filter performance data based on active tab
+  const getFilteredPerformanceData = (data) => {
+    let filteredData = [];
+    
+    if (activePerformanceTab === 'starPerformers') {
+      filteredData = data.filter(item => item.completion >= 50);
+    } else if (activePerformanceTab === 'underperformers') {
+      filteredData = data.filter(item => item.completion < 50);
+    } else {
+      filteredData = data;
+    }
+    
+    console.log(`📊 Performance Filter (${activePerformanceTab}):`, {
+      totalItems: data.length,
+      filteredItems: filteredData.length,
+      threshold: activePerformanceTab === 'starPerformers' ? '>= 50%' : '< 50%'
+    });
+    
+    return filteredData;
+  };
+
   // Get performance data based on current scope
   const getPerformanceData = () => {
+    const processedData = processPerformanceData();
+    const previousMonthData = processPreviousMonthData();
+    
+    let performanceData = [];
+    
     switch (activeScope) {
       case 'State':
         // State -> show all districts
-        return districts.map(district => ({
-          name: district.name,
-          id: district.id,
-          type: 'District'
-        }));
+        performanceData = districts.map(district => {
+          const apiData = processedData.get(district.name);
+          const previousData = previousMonthData.get(district.name);
+          const growth = calculateGrowth(
+            apiData?.completionPercentage || 0,
+            previousData?.completionPercentage || 0
+          );
+          
+          return {
+            name: district.name,
+            id: district.id,
+            type: 'District',
+            avgResolutionTime: apiData?.avgResolutionTimeDays || 0,
+            completion: apiData?.completionPercentage || 0,
+            growth: growth
+          };
+        });
+        break;
       case 'Districts':
         // District -> show all blocks under that district
         if (selectedDistrictId) {
-          return blocks.filter(block => block.district_id === selectedDistrictId)
-                      .map(block => ({
-                        name: block.name,
-                        id: block.id,
-                        type: 'Block'
-                      }));
+          performanceData = blocks.filter(block => block.district_id === selectedDistrictId)
+                      .map(block => {
+                        const apiData = processedData.get(block.name);
+                        const previousData = previousMonthData.get(block.name);
+                        const growth = calculateGrowth(
+                          apiData?.completionPercentage || 0,
+                          previousData?.completionPercentage || 0
+                        );
+                        
+                        return {
+                          name: block.name,
+                          id: block.id,
+                          type: 'Block',
+                          avgResolutionTime: apiData?.avgResolutionTimeDays || 0,
+                          completion: apiData?.completionPercentage || 0,
+                          growth: growth
+                        };
+                      });
         }
-        return [];
+        break;
       case 'Blocks':
         // Block -> show all GPs under that block
         if (selectedBlockId) {
-          return gramPanchayats.filter(gp => gp.block_id === selectedBlockId)
-                              .map(gp => ({
-                                name: gp.name,
-                                id: gp.id,
-                                type: 'GP'
-                              }));
+          performanceData = gramPanchayats.filter(gp => gp.block_id === selectedBlockId)
+                              .map(gp => {
+                                const apiData = processedData.get(gp.name);
+                                const previousData = previousMonthData.get(gp.name);
+                                const growth = calculateGrowth(
+                                  apiData?.completionPercentage || 0,
+                                  previousData?.completionPercentage || 0
+                                );
+                                
+                                return {
+                                  name: gp.name,
+                                  id: gp.id,
+                                  type: 'GP',
+                                  avgResolutionTime: apiData?.avgResolutionTimeDays || 0,
+                                  completion: apiData?.completionPercentage || 0,
+                                  growth: growth
+                                };
+                              });
         }
-        return [];
+        break;
       case 'GPs':
         // GP -> show only that GP
         if (selectedGPId) {
           const selectedGP = gramPanchayats.find(gp => gp.id === selectedGPId);
-          return selectedGP ? [{
-            name: selectedGP.name,
-            id: selectedGP.id,
-            type: 'GP'
-          }] : [];
+          if (selectedGP) {
+            const apiData = processedData.get(selectedGP.name);
+            const previousData = previousMonthData.get(selectedGP.name);
+            const growth = calculateGrowth(
+              apiData?.completionPercentage || 0,
+              previousData?.completionPercentage || 0
+            );
+            
+            performanceData = [{
+              name: selectedGP.name,
+              id: selectedGP.id,
+              type: 'GP',
+              avgResolutionTime: apiData?.avgResolutionTimeDays || 0,
+              completion: apiData?.completionPercentage || 0,
+              growth: growth
+            }];
+          }
         }
-        return [];
+        break;
       default:
-        return [];
+        performanceData = [];
     }
+    
+    return getFilteredPerformanceData(performanceData);
   };
 
   const performanceData = getPerformanceData();
+
+  // Get Top 3 data from API response
+  const getTop3Data = () => {
+    if (!top3ApiData || !Array.isArray(top3ApiData)) {
+      return [];
+    }
+    
+    // API already returns data sorted by score (descending)
+    // Take only top 3 and map to our format
+    return top3ApiData.slice(0, 3).map((item, index) => ({
+      name: item.geo_name,
+      id: item.geo_id,
+      type: top3Scope,
+      score: item.score,
+      rating: '', // Empty as requested
+      growth: '' // Empty as requested
+    }));
+  };
+
+  const top3Data = getTop3Data();
+
+  // Simple error boundary
+  if (typeof window !== 'undefined') {
+    console.log('DashboardContent rendering...');
+  }
 
   return (
     <div>
@@ -2387,40 +2872,62 @@ const DashboardContent = () => {
               padding: '4px',
               gap: '2px'
             }}>
-              <button style={{
+              <button 
+                onClick={() => setActivePerformanceTab('starPerformers')}
+                style={{
                 padding: '5px 10px',
                 borderRadius: '8px',
                 border: 'none',
                 cursor: 'pointer',
                 fontSize: '14px',
                 fontWeight: '500',
-                backgroundColor: '#10b981',
-                color: 'white'
+                  backgroundColor: activePerformanceTab === 'starPerformers' ? '#10b981' : 'transparent',
+                  color: activePerformanceTab === 'starPerformers' ? 'white' : '#6b7280'
               }}>
                 Star Performers
               </button>
-              <button style={{
+              <button 
+                onClick={() => setActivePerformanceTab('underperformers')}
+                style={{
                 padding: '5px 10px',
                 borderRadius: '8px',
                 border: 'none',
                 cursor: 'pointer',
                 fontSize: '14px',
                 fontWeight: '500',
-                backgroundColor: 'transparent',
-                color: '#6b7280'
+                  backgroundColor: activePerformanceTab === 'underperformers' ? '#10b981' : 'transparent',
+                  color: activePerformanceTab === 'underperformers' ? 'white' : '#6b7280'
               }}>
                 Underperformers
               </button>
             </div>
           </div>
 
+          {/* Loading/Error State */}
+          {performanceError && (
+            <div style={{
+              padding: '16px',
+              backgroundColor: '#fee2e2',
+              border: '1px solid #fecaca',
+              borderRadius: '8px',
+              color: '#dc2626',
+              fontSize: '14px',
+              marginBottom: '16px'
+            }}>
+              <strong>Error:</strong> {performanceError}
+            </div>
+          )}
+
           {/* Performance Table */}
           <div style={{
-            overflowX: 'auto'
+            overflowX: 'auto',
+            opacity: loadingPerformance ? 0.6 : 1,
+            transition: 'opacity 0.3s'
           }}>
             <table style={{
               width: '100%',
-              borderCollapse: 'collapse'
+              borderCollapse: 'collapse',
+              tableLayout: 'fixed' // Ensures consistent column widths
             }}>
               <thead>
                 <tr style={{
@@ -2442,7 +2949,7 @@ const DashboardContent = () => {
                     fontWeight: '600',
                     color: '#374151'
                   }}>
-                    Avg Response
+                    Avg Resolution Time
                   </th>
                   <th style={{
                     padding: '12px',
@@ -2451,7 +2958,7 @@ const DashboardContent = () => {
                     fontWeight: '600',
                     color: '#374151'
                   }}>
-                    Completion
+                    Complaints closed
                   </th>
                   <th style={{
                     padding: '12px',
@@ -2473,72 +2980,87 @@ const DashboardContent = () => {
                   </th>
                 </tr>
               </thead>
+            </table>
+            <div style={{
+              maxHeight: '350px', // Approximately 5 rows * 60px per row
+              overflowY: 'auto',
+              borderTop: '1px solid #e5e7eb',
+              // Custom scrollbar styling
+              scrollbarWidth: 'thin',
+              scrollbarColor: '#d1d5db #f3f4f6'
+            }}>
+              <table style={{
+                width: '100%',
+                borderCollapse: 'collapse',
+                tableLayout: 'fixed' // Ensures consistent column widths
+              }}>
               <tbody>
-                {performanceData.length === 0 ? (
-                  <tr>
-                    <td colSpan="5" style={{
-                      padding: '20px',
-                      textAlign: 'center',
-                      fontSize: '14px',
-                      color: '#6b7280'
-                    }}>
-                      No data available
-                    </td>
-                  </tr>
-                ) : (
-                  performanceData.map((item, index) => (
-                    <tr key={item.id || index} style={{
-                      borderBottom: '1px solid #f3f4f6'
-                    }}>
-                      <td style={{
-                        padding: '12px',
+                  {performanceData.length === 0 ? (
+                    <tr>
+                      <td colSpan="5" style={{
+                        padding: '20px',
+                        textAlign: 'center',
                         fontSize: '14px',
-                        color: '#374151',
-                        fontWeight: '500'
+                        color: '#6b7280'
                       }}>
-                        {item.name}
-                      </td>
-                      <td style={{
-                        padding: '12px',
-                        fontSize: '14px',
-                        color: '#374151'
-                      }}>
-                        -
-                      </td>
-                      <td style={{
-                        padding: '12px',
-                        fontSize: '14px',
-                        color: '#374151'
-                      }}>
-                        -
-                      </td>
-                      <td style={{
-                        padding: '12px',
-                        fontSize: '14px',
-                        color: '#374151'
-                      }}>
-                        -
-                      </td>
-                      <td style={{
-                        padding: '12px'
-                      }}>
-                        <button style={{
-                          padding: '6px 12px',
-                          backgroundColor: '#f3f4f6',
-                          border: '1px solid #d1d5db',
-                          borderRadius: '8px',
-                          fontSize: '12px',
-                          color: '#374151',
-                          cursor: 'pointer'
-                        }}>
-                          Send notice
-                        </button>
+                        No data available
                       </td>
                     </tr>
-                  ))
-                )}
+                  ) : (
+                    performanceData.map((item, index) => (
+                    <tr key={item.id || index} style={{
+                    borderBottom: '1px solid #f3f4f6'
+                  }}>
+                    <td style={{
+                      padding: '12px',
+                      fontSize: '14px',
+                        color: '#374151',
+                        fontWeight: '500'
+                    }}>
+                        {item.name}
+                    </td>
+                    <td style={{
+                      padding: '12px',
+                      fontSize: '14px',
+                      color: '#374151'
+                    }}>
+                        {item.avgResolutionTime > 0 ? `${item.avgResolutionTime} days` : '-'}
+                    </td>
+                    <td style={{
+                      padding: '12px',
+                      fontSize: '14px',
+                      color: '#374151'
+                    }}>
+                        {item.completion > 0 ? `${item.completion}%` : '-'}
+                    </td>
+                    <td style={{
+                      padding: '12px',
+                      fontSize: '14px',
+                        color: '#374151'
+                    }}>
+                        -
+                    </td>
+                    <td style={{
+                      padding: '12px'
+                    }}>
+                      <button style={{
+                        padding: '6px 12px',
+                        backgroundColor: '#f3f4f6',
+                        border: '1px solid #d1d5db',
+                        borderRadius: '8px',
+                        fontSize: '12px',
+                        color: '#374151',
+                        cursor: 'pointer'
+                      }}>
+                        Send notice
+                      </button>
+                    </td>
+                  </tr>
+                    ))
+                  )}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
 
@@ -2575,11 +3097,15 @@ const DashboardContent = () => {
               </h2>
               <Info style={{ width: '16px', height: '16px', color: '#9ca3af' }} />
             </div>
-            <div style={{
+            <div 
+              data-top3-dropdown
+              style={{
               position: 'relative',
               minWidth: '100px'
             }}>
-              <button style={{
+              <button 
+                onClick={() => setShowTop3Dropdown(!showTop3Dropdown)}
+                style={{
                 width: '100%',
                 padding: '6px 12px',
                 border: '1px solid #d1d5db',
@@ -2592,15 +3118,70 @@ const DashboardContent = () => {
                 fontSize: '14px',
                 color: '#6b7280'
               }}>
-                <span>District</span>
+                <span>{top3Scope}</span>
                 <ChevronDown style={{ width: '16px', height: '16px', color: '#9ca3af' }} />
               </button>
+              
+              {showTop3Dropdown && (
+                <div style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  right: 0,
+                  backgroundColor: 'white',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '8px',
+                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                  zIndex: 10,
+                  marginTop: '4px'
+                }}>
+                  {['District', 'Block', 'GP'].map((option) => (
+                    <button
+                      key={option}
+                      onClick={() => {
+                        setTop3Scope(option);
+                        setShowTop3Dropdown(false);
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '8px 12px',
+                        border: 'none',
+                        backgroundColor: top3Scope === option ? '#f3f4f6' : 'transparent',
+                        color: top3Scope === option ? '#111827' : '#6b7280',
+                        fontSize: '14px',
+                        textAlign: 'left',
+                        cursor: 'pointer',
+                        borderRadius: '4px',
+                        margin: '2px'
+                      }}>
+                      {option}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
+
+          {/* Loading/Error State */}
+          {top3Error && (
+            <div style={{
+              padding: '20px',
+              textAlign: 'center',
+              color: '#dc2626',
+              backgroundColor: '#fef2f2',
+              borderRadius: '8px',
+              marginBottom: '16px'
+            }}>
+              {top3Error}
+            </div>
+          )}
+
           {/* Top 3 Table */}
           <div style={{
-            overflowX: 'auto'
+            overflowX: 'auto',
+            opacity: loadingTop3 ? 0.6 : 1,
+            transition: 'opacity 0.3s'
           }}>
             <table style={{
               width: '100%',
@@ -2626,7 +3207,7 @@ const DashboardContent = () => {
                     fontWeight: '600',
                     color: '#374151'
                   }}>
-                    District
+                    {top3Scope}
                   </th>
                   <th style={{
                     padding: '12px',
@@ -2650,11 +3231,19 @@ const DashboardContent = () => {
                 </tr>
               </thead>
               <tbody>
-                {[
-                  { rank: 1, name: 'District name', rating: '9.8', growth: '+1', image: number1 },
-                  { rank: 2, name: 'District name', rating: '9.0', growth: '+2', image: number2 },
-                  { rank: 3, name: 'District name', rating: '8.2', growth: '+3', image: number3 }
-                ].map((item, index) => (
+                {top3Data.length === 0 ? (
+                  <tr>
+                    <td colSpan="4" style={{
+                      padding: '20px',
+                      textAlign: 'center',
+                      fontSize: '14px',
+                      color: '#6b7280'
+                    }}>
+                      {loadingTop3 ? 'Loading...' : 'No data available'}
+                    </td>
+                  </tr>
+                ) : (
+                  top3Data.map((item, index) => (
                   <tr key={index} style={{
                     borderBottom: '1px solid #f3f4f6'
                   }}>
@@ -2664,8 +3253,8 @@ const DashboardContent = () => {
                       color: '#374151'
                     }}>
                       <img 
-                        src={item.image} 
-                        alt={`Rank ${item.rank}`}
+                        src={index === 0 ? number1 : index === 1 ? number2 : number3} 
+                        alt={`Rank ${index + 1}`}
                         style={{
                           width: '100px',
                           height: '100px',
@@ -2683,29 +3272,21 @@ const DashboardContent = () => {
                     <td style={{
                       padding: '12px',
                       fontSize: '14px',
-                      color: '#374151'
+                      color: '#6b7280'
                     }}>
-                      {item.rating}
+                      {item.rating || '-'}
                     </td>
                     <td style={{
-                      padding: '12px'
-                    }}>
-                      <div style={{
-                        display: 'inline-block',
-                        backgroundColor: '#dcfce7',
-                        color: '#166534',
-                        padding: '1px 8px',
-                        borderRadius: '10px',
+                      padding: '12px',
                         fontSize: '14px',
-                        fontWeight: '400',
-                        border: '1px solid #bbf7d0'
+                      color: '#6b7280'
                       }}>
-                        {item.growth}
-                      </div>
+                      {item.growth || '-'}
                     </td>
                    
                   </tr>
-                ))}
+                  ))
+                )}
               </tbody>
             </table>
           </div>

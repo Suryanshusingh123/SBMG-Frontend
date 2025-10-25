@@ -1,25 +1,788 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { MapPin, ChevronDown, Calendar, List, Info, Search, Filter, Download, Eye, Edit, Trash2, CheckCircle, XCircle, Clock } from 'lucide-react';
 import Chart from 'react-apexcharts';
+import apiClient from '../../services/api';
+import LocationDisplay from '../common/LocationDisplay';
 
 const ComplaintsContent = () => {
+  // Local location state (independent from dashboard)
+  const [activeScope, setActiveScope] = useState('State');
+  const [selectedLocation, setSelectedLocation] = useState('Rajasthan');
+  const [selectedLocationId, setSelectedLocationId] = useState(null);
+  const [selectedDistrictId, setSelectedDistrictId] = useState(null);
+  const [selectedBlockId, setSelectedBlockId] = useState(null);
+  const [selectedGPId, setSelectedGPId] = useState(null);
+  const [dropdownLevel, setDropdownLevel] = useState('districts');
+  const [selectedDistrictForHierarchy, setSelectedDistrictForHierarchy] = useState(null);
+  const [selectedBlockForHierarchy, setSelectedBlockForHierarchy] = useState(null);
+  
+  // Helper functions for location management (moved from context)
+  const trackTabChange = (scope) => {
+    console.log('Tab changed to:', scope);
+  };
+  
+  const trackDropdownChange = (location) => {
+    console.log('Dropdown changed to:', location);
+  };
+  
+  const getCurrentLocationInfo = () => {
+    return {
+      scope: activeScope,
+      location: selectedLocation,
+      districtId: selectedDistrictId,
+      blockId: selectedBlockId,
+      gpId: selectedGPId
+    };
+  };
+  
+  const updateLocationSelection = (scope, location, locationId, districtId, blockId, gpId, changeType) => {
+    console.log('🔄 updateLocationSelection called:', { scope, location, locationId, districtId, blockId, gpId, changeType });
+    setActiveScope(scope);
+    setSelectedLocation(location);
+    setSelectedLocationId(locationId);
+    setSelectedDistrictId(districtId);
+    setSelectedBlockId(blockId);
+    setSelectedGPId(gpId);
+    console.log('✅ Location state updated');
+  };
+
+  // Local state for UI controls
+  const [showLocationDropdown, setShowLocationDropdown] = useState(false);
+  const [showFilterDropdown, setShowFilterDropdown] = useState(false);
+  const [districts, setDistricts] = useState([]);
+  const [loadingDistricts, setLoadingDistricts] = useState(false);
+  const [blocks, setBlocks] = useState([]);
+  const [loadingBlocks, setLoadingBlocks] = useState(false);
+  const [gramPanchayats, setGramPanchayats] = useState([]);
+  const [loadingGPs, setLoadingGPs] = useState(false);
+
+  // Complaints specific state
   const [activeFilter, setActiveFilter] = useState('All');
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeScope, setActiveScope] = useState('State');
+
+  // Analytics data state
+  const [analyticsData, setAnalyticsData] = useState(null);
+  const [loadingAnalytics, setLoadingAnalytics] = useState(false);
+  const [analyticsError, setAnalyticsError] = useState(null);
+
+  // Complaints list data state from API
+  const [complaintsListData, setComplaintsListData] = useState([]);
+  const [loadingComplaints, setLoadingComplaints] = useState(false);
+  const [complaintsError, setComplaintsError] = useState(null);
+
+  // Date selection state
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState(null); // null means not selected
+  const [selectedDay, setSelectedDay] = useState(null); // null means not selected
+  const [showDateDropdown, setShowDateDropdown] = useState(false);
+  const [selectionStep, setSelectionStep] = useState('year'); // 'year', 'month', 'day'
+  
+  // Date range state
+  const [selectedDateRange, setSelectedDateRange] = useState('Today');
+  const [startDate, setStartDate] = useState(() => {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  });
+  const [endDate, setEndDate] = useState(() => {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  });
+  const [isCustomRange, setIsCustomRange] = useState(false);
 
   const scopeButtons = ['State', 'Districts', 'Blocks', 'GPs'];
 
   const filterButtons = ['All', 'Open', 'In Progress', 'Resolved', 'Closed'];
 
-  const complaintMetrics = [
+  // Predefined date ranges
+  const dateRanges = [
+    { label: 'Today', value: 'today', days: 0 },
+    { label: 'Yesterday', value: 'yesterday', days: 1 },
+    { label: 'Last 7 Days', value: 'last7days', days: 7 },
+    { label: 'Last 30 Days', value: 'last30days', days: 30 },
+    { label: 'Last 60 Days', value: 'last60days', days: 60 },
+    { label: 'Custom', value: 'custom', days: null }
+  ];
+
+  // Months array
+  const months = [
+    { value: 1, name: 'January' },
+    { value: 2, name: 'February' },
+    { value: 3, name: 'March' },
+    { value: 4, name: 'April' },
+    { value: 5, name: 'May' },
+    { value: 6, name: 'June' },
+    { value: 7, name: 'July' },
+    { value: 8, name: 'August' },
+    { value: 9, name: 'September' },
+    { value: 10, name: 'October' },
+    { value: 11, name: 'November' },
+    { value: 12, name: 'December' }
+  ];
+
+  // Log current location info whenever it changes
+  useEffect(() => {
+    const locationInfo = getCurrentLocationInfo();
+    console.log('Current Location Info:', locationInfo);
+  }, [activeScope, selectedLocation, selectedLocationId, selectedDistrictId, selectedBlockId, selectedGPId, getCurrentLocationInfo]);
+
+  // Fetch districts from API
+  const fetchDistricts = async () => {
+    try {
+      setLoadingDistricts(true);
+      const response = await apiClient.get('/geography/districts?skip=0&limit=100');
+      console.log('Districts API Response:', response.data);
+      setDistricts(response.data);
+    } catch (error) {
+      console.error('Error fetching districts:', error);
+    } finally {
+      setLoadingDistricts(false);
+    }
+  };
+
+  // Fetch blocks from API
+  const fetchBlocks = async () => {
+    try {
+      setLoadingBlocks(true);
+      const response = await apiClient.get('/geography/blocks?skip=0&limit=100');
+      console.log('Blocks API Response:', response.data);
+      setBlocks(response.data);
+    } catch (error) {
+      console.error('Error fetching blocks:', error);
+    } finally {
+      setLoadingBlocks(false);
+    }
+  };
+
+  // Fetch gram panchayats from API
+  const fetchGramPanchayats = async () => {
+    try {
+      setLoadingGPs(true);
+      console.log('🔄 Fetching GPs...');
+      const response = await apiClient.get('/geography/grampanchayats?skip=0&limit=100');
+      console.log('✅ GPs API Response:', response.data);
+      console.log('📊 Number of GPs fetched:', response.data?.length || 0);
+      setGramPanchayats(response.data);
+    } catch (error) {
+      console.error('❌ Error fetching gram panchayats:', error);
+      setGramPanchayats([]);
+    } finally {
+      setLoadingGPs(false);
+    }
+  };
+
+  // Handle scope change
+  const handleScopeChange = (scope) => {
+    console.log('Scope changed to:', scope);
+    trackTabChange(scope);
+    setActiveScope(scope);
+    setShowLocationDropdown(false);
+    
+    // Use updateLocationSelection like dashboard for proper state management
+    if (scope === 'State') {
+      // For State scope, set Rajasthan as default and disable dropdown
+      updateLocationSelection('State', 'Rajasthan', null, null, null, null, 'tab_change');
+      setDropdownLevel('districts');
+      setSelectedDistrictForHierarchy(null);
+      setSelectedBlockForHierarchy(null);
+    } else if (scope === 'Districts') {
+      // Set first district as selected (districts are already loaded)
+      if (districts.length > 0) {
+        updateLocationSelection('Districts', districts[0].name, districts[0].id, districts[0].id, null, null, 'tab_change');
+      }
+      // Fetch blocks for complaints chart
+      fetchBlocks();
+      setDropdownLevel('districts');
+      setSelectedDistrictForHierarchy(null);
+      setSelectedBlockForHierarchy(null);
+    } else if (scope === 'Blocks') {
+      // For blocks, start with districts level
+      fetchBlocks();
+      fetchGramPanchayats();
+      updateLocationSelection('Blocks', 'Select District', null, null, null, null, 'tab_change');
+      setDropdownLevel('districts');
+      setSelectedDistrictForHierarchy(null);
+      setSelectedBlockForHierarchy(null);
+    } else if (scope === 'GPs') {
+      // For GPs, start with districts level
+      fetchBlocks();
+      fetchGramPanchayats();
+      updateLocationSelection('GPs', 'Select District', null, null, null, null, 'tab_change');
+      setDropdownLevel('districts');
+      setSelectedDistrictForHierarchy(null);
+      setSelectedBlockForHierarchy(null);
+    }
+  };
+
+  // Get location options based on current scope and dropdown level
+  const getLocationOptions = () => {
+    if (activeScope === 'Districts') {
+      return districts;
+    } else if (activeScope === 'Blocks') {
+      if (dropdownLevel === 'districts') {
+        return districts;
+      } else if (dropdownLevel === 'blocks') {
+        return blocks.filter(block => block.district_id === selectedDistrictForHierarchy?.id);
+      }
+    } else if (activeScope === 'GPs') {
+      if (dropdownLevel === 'districts') {
+        return districts;
+      } else if (dropdownLevel === 'blocks') {
+        return blocks.filter(block => block.district_id === selectedDistrictForHierarchy?.id);
+      } else if (dropdownLevel === 'gps') {
+        const filteredGPs = gramPanchayats.filter(gp => gp.block_id === selectedBlockForHierarchy?.id);
+        console.log('🔍 Filtering GPs:', {
+          totalGPs: gramPanchayats.length,
+          selectedBlockId: selectedBlockForHierarchy?.id,
+          filteredGPsCount: filteredGPs.length,
+          filteredGPs: filteredGPs
+        });
+        return filteredGPs;
+      }
+    }
+    return [];
+  };
+
+  // Handle hierarchical selection for blocks and GPs
+  const handleHierarchicalSelection = (location) => {
+    if (activeScope === 'Blocks') {
+      if (dropdownLevel === 'districts') {
+        // District selected, now show blocks
+        setSelectedDistrictForHierarchy(location);
+        setDropdownLevel('blocks');
+        setSelectedLocation('Select Block');
+        fetchBlocks();
+      } else if (dropdownLevel === 'blocks') {
+        // Block selected
+        trackDropdownChange(location.name, location.id, selectedDistrictForHierarchy.id);
+        updateLocationSelection('Blocks', location.name, location.id, selectedDistrictForHierarchy.id, location.id, null, 'dropdown_change');
+        console.log('Selected block ID:', location.id, 'Name:', location.name, 'District ID:', selectedDistrictForHierarchy.id);
+        setShowLocationDropdown(false);
+      }
+    } else if (activeScope === 'GPs') {
+      if (dropdownLevel === 'districts') {
+        // District selected, now show blocks
+        setSelectedDistrictForHierarchy(location);
+        setDropdownLevel('blocks');
+        setSelectedLocation('Select Block');
+        fetchBlocks();
+      } else if (dropdownLevel === 'blocks') {
+        // Block selected, now show GPs
+        setSelectedBlockForHierarchy(location);
+        setDropdownLevel('gps');
+        setSelectedLocation('Select GP');
+        fetchGramPanchayats();
+      } else if (dropdownLevel === 'gps') {
+        // GP selected
+        trackDropdownChange(location.name, location.id, selectedBlockForHierarchy.id);
+        updateLocationSelection('GPs', location.name, location.id, selectedDistrictForHierarchy.id, selectedBlockForHierarchy.id, location.id, 'dropdown_change');
+        console.log('Selected GP ID:', location.id, 'Name:', location.name, 'Block ID:', selectedBlockForHierarchy.id, 'District ID:', selectedDistrictForHierarchy.id);
+        setShowLocationDropdown(false);
+      }
+    }
+  };
+
+  // Click outside handler
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (!event.target.closest('[data-location-dropdown]') && 
+          !event.target.closest('[data-date-dropdown]') && 
+          !event.target.closest('[data-top3-dropdown]') &&
+          !event.target.closest('[data-filter-dropdown]')) {
+        setShowLocationDropdown(false);
+        setShowDateDropdown(false);
+        setShowFilterDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  // Fetch districts immediately when complaints page loads
+  useEffect(() => {
+    fetchDistricts();
+  }, []);
+
+  // Fetch data immediately when complaints tab is selected
+  useEffect(() => {
+    console.log('🚀 Complaints tab selected - fetching initial data');
+    // For State scope, we can call API immediately
+    if (activeScope === 'State') {
+      console.log('📡 Calling initial API for State scope');
+      fetchAnalyticsData();
+      fetchComplaintsData();
+    }
+  }, []); // Empty dependency array means this runs only once when component mounts
+
+  // Load additional data based on scope
+  useEffect(() => {
+    if (activeScope === 'Districts' && districts.length === 0) {
+      fetchDistricts();
+    }
+  }, [activeScope, districts.length]);
+
+  // Helper function to calculate complaint counts from API data
+  const calculateComplaintCounts = () => {
+    if (!analyticsData?.response) {
+      return {
+        total: 0,
+        open: 0,
+        verified: 0,
+        resolved: 0,
+        disposed: 0
+      };
+    }
+
+    const counts = {
+      total: 0,
+      open: 0,
+      verified: 0,
+      resolved: 0,
+      disposed: 0
+    };
+
+    analyticsData.response.forEach(item => {
+      const status = item.status?.toUpperCase();
+      const count = item.count || 0;
+      counts.total += count;
+      
+      switch (status) {
+        case 'OPEN':
+          counts.open += count;
+          break;
+        case 'VERIFIED':
+          counts.verified += count;
+          break;
+        case 'RESOLVED':
+          counts.resolved += count;
+          break;
+        case 'CLOSED':
+        case 'DISPOSED':
+          counts.disposed += count;
+          break;
+      }
+    });
+
+    return counts;
+  };
+
+  // Helper function to format numbers
+  const formatNumber = (num) => {
+    // Display whole numbers with commas for thousands
+    return num.toLocaleString();
+  };
+
+  // Fetch complaints list from API
+  const fetchComplaintsData = useCallback(async () => {
+    try {
+      setLoadingComplaints(true);
+      setComplaintsError(null);
+
+      console.log('🔄 ===== COMPLAINTS LIST API CALL =====');
+      console.log('📍 Current State:', {
+        activeScope,
+        selectedDistrictId,
+        selectedBlockId,
+        selectedGPId,
+        startDate,
+        endDate
+      });
+
+      // Build query parameters
+      const params = new URLSearchParams();
+      params.append('limit', '500');
+      params.append('order_by', 'newest');
+
+      // Add date range filters
+      if (startDate) {
+        params.append('start_date', startDate);
+        console.log('📅 Start Date:', startDate);
+      }
+      if (endDate) {
+        params.append('end_date', endDate);
+        console.log('📅 End Date:', endDate);
+      }
+
+      // Add geography filters based on active scope
+      if (activeScope === 'Districts' && selectedDistrictId) {
+        params.append('district_id', selectedDistrictId);
+        console.log('🏙️  District ID:', selectedDistrictId);
+      } else if (activeScope === 'Blocks' && selectedBlockId) {
+        params.append('block_id', selectedBlockId);
+        console.log('🏘️  Block ID:', selectedBlockId);
+      } else if (activeScope === 'GPs' && selectedGPId) {
+        params.append('gp_id', selectedGPId);
+        console.log('🏡 GP ID:', selectedGPId);
+      }
+
+      const url = `/complaints?${params.toString()}`;
+      console.log('🌐 Full API URL:', url);
+      
+      const response = await apiClient.get(url);
+      
+      console.log('✅ Complaints List API Response:', {
+        status: response.status,
+        count: response.data?.length || 0,
+        sample: response.data?.slice(0, 2)
+      });
+      
+      setComplaintsListData(response.data || []);
+      console.log('📊 Complaints data set:', response.data?.length || 0, 'complaints');
+      console.log('🔄 ===== END COMPLAINTS LIST API CALL =====\n');
+      
+    } catch (error) {
+      console.error('❌ ===== COMPLAINTS LIST API ERROR =====');
+      console.error('Error:', error);
+      console.error('🔄 ===== END COMPLAINTS LIST API ERROR =====\n');
+      
+      setComplaintsError(error.message || 'Failed to fetch complaints data');
+      setComplaintsListData([]);
+    } finally {
+      setLoadingComplaints(false);
+    }
+  }, [activeScope, selectedDistrictId, selectedBlockId, selectedGPId, startDate, endDate]);
+
+  // Fetch analytics data from API
+  const fetchAnalyticsData = useCallback(async () => {
+    try {
+      setLoadingAnalytics(true);
+      setAnalyticsError(null);
+
+      console.log('🔄 ===== COMPLAINTS ANALYTICS API CALL =====');
+      console.log('📍 Current State:', {
+        activeScope,
+        selectedLocation,
+        selectedDistrictId,
+        selectedBlockId,
+        selectedGPId,
+        startDate,
+        endDate
+      });
+
+      // Build query parameters based on selected scope
+      const params = new URLSearchParams();
+
+      // Determine level based on active scope
+      let level = 'DISTRICT'; // Default for State scope
+      if (activeScope === 'Districts') {
+        level = 'BLOCK';
+      } else if (activeScope === 'Blocks') {
+        level = 'VILLAGE';
+      } else if (activeScope === 'GPs') {
+        level = 'VILLAGE';
+      }
+      params.append('level', level);
+      console.log('📊 Level:', level);
+
+      // Add geography IDs based on selection
+      if (activeScope === 'Districts' && selectedDistrictId) {
+        params.append('district_id', selectedDistrictId);
+        console.log('🏙️  District ID:', selectedDistrictId);
+      } else if (activeScope === 'Blocks' && selectedBlockId) {
+        params.append('block_id', selectedBlockId);
+        console.log('🏘️  Block ID:', selectedBlockId);
+      } else if (activeScope === 'GPs' && selectedGPId) {
+        params.append('gp_id', selectedGPId);
+        console.log('🏡 GP ID:', selectedGPId);
+      }
+
+      // Add date range if available
+      if (startDate) {
+        params.append('start_date', startDate);
+        console.log('📅 Start Date:', startDate);
+      }
+      if (endDate) {
+        params.append('end_date', endDate);
+        console.log('📅 End Date:', endDate);
+      }
+
+      const url = `/complaints/analytics/geo?${params.toString()}`;
+      console.log('🌐 Full API URL:', url);
+      console.log('🔗 Complete URL:', `${apiClient.defaults.baseURL}${url}`);
+      
+      // Check if token exists
+      const token = localStorage.getItem('access_token');
+      console.log('🔑 Token Status:', token ? 'Present' : 'Missing');
+      if (token) {
+        console.log('🔑 Token Preview:', token.substring(0, 20) + '...');
+      }
+      
+      const response = await apiClient.get(url);
+      
+      console.log('✅ Complaints Analytics API Response:', {
+        status: response.status,
+        statusText: response.statusText,
+        data: response.data
+      });
+      
+      console.log('📦 Response Data Structure:', {
+        geo_type: response.data?.geo_type,
+        response_count: response.data?.response?.length,
+        sample_data: response.data?.response?.slice(0, 2)
+      });
+      
+      setAnalyticsData(response.data);
+      
+      // Calculate and log aggregated counts
+      const aggregated = {
+        total: 0,
+        open: 0,
+        verified: 0,
+        resolved: 0,
+        disposed: 0
+      };
+      
+      response.data?.response?.forEach(item => {
+        const status = item.status?.toUpperCase();
+        const count = item.count || 0;
+        aggregated.total += count;
+        
+        switch (status) {
+          case 'OPEN':
+            aggregated.open += count;
+            break;
+          case 'VERIFIED':
+            aggregated.verified += count;
+            break;
+          case 'RESOLVED':
+            aggregated.resolved += count;
+            break;
+          case 'CLOSED':
+          case 'DISPOSED':
+            aggregated.disposed += count;
+            break;
+        }
+      });
+      
+      console.log('📈 Aggregated Counts:', aggregated);
+      console.log('🔄 ===== END COMPLAINTS ANALYTICS API CALL =====\n');
+      
+    } catch (error) {
+      console.error('❌ ===== COMPLAINTS ANALYTICS API ERROR =====');
+      console.error('Error Type:', error.name);
+      console.error('Error Message:', error.message);
+      console.error('Error Details:', error.response?.data || error);
+      console.error('Status Code:', error.response?.status);
+      console.error('🔄 ===== END COMPLAINTS ANALYTICS API ERROR =====\n');
+      
+      setAnalyticsError(error.message || 'Failed to fetch analytics data');
+      setAnalyticsData(null);
+    } finally {
+      setLoadingAnalytics(false);
+    }
+  }, [activeScope, selectedLocation, selectedDistrictId, selectedBlockId, selectedGPId, startDate, endDate]);
+
+  // Fetch analytics data for overview section when scope, location, or date range changes
+  useEffect(() => {
+    console.log('🔄 Analytics useEffect triggered:', {
+      activeScope,
+      districtsLength: districts.length,
+      selectedDistrictId,
+      selectedBlockId,
+      selectedGPId,
+      startDate,
+      endDate
+    });
+    
+    // For State scope, we can call API immediately (no need to wait for districts)
+    if (activeScope === 'State') {
+      console.log('📡 Calling API for State scope');
+      fetchAnalyticsData();
+      fetchComplaintsData();
+      return;
+    }
+    
+    // For other scopes, check if we have the necessary location data loaded
+    if (activeScope === 'Districts' && !selectedDistrictId) {
+      console.log('⏳ Waiting for district selection');
+      return; // Wait for district selection
+    }
+    if (activeScope === 'Blocks' && !selectedBlockId) {
+      console.log('⏳ Waiting for block selection');
+      return; // Wait for block selection
+    }
+    if (activeScope === 'GPs' && !selectedGPId) {
+      console.log('⏳ Waiting for GP selection');
+      return; // Wait for GP selection
+    }
+    
+    console.log('📡 Calling API for other scopes');
+    fetchAnalyticsData();
+    fetchComplaintsData();
+  }, [activeScope, selectedLocation, selectedDistrictId, selectedBlockId, selectedGPId, startDate, endDate, districts, blocks, gramPanchayats, fetchComplaintsData]);
+
+  // Date range functions
+  const generateYears = () => {
+    const currentYear = new Date().getFullYear();
+    return Array.from({ length: 6 }, (_, i) => currentYear - i);
+  };
+
+  const generateDays = () => {
+    const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
+    return Array.from({ length: daysInMonth }, (_, i) => i + 1);
+  };
+
+  // Get display text based on selected date range
+  const getDateDisplayText = () => {
+    if (isCustomRange && startDate && endDate) {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      return `${start.getDate()}/${start.getMonth() + 1}/${start.getFullYear()} - ${end.getDate()}/${end.getMonth() + 1}/${end.getFullYear()}`;
+    } else if (isCustomRange && startDate) {
+      const start = new Date(startDate);
+      return `${start.getDate()}/${start.getMonth() + 1}/${start.getFullYear()} - Select End Date`;
+    } else {
+      return selectedDateRange;
+    }
+  };
+
+  // Get the current filter type based on what's selected
+  const getCurrentFilterType = () => {
+    if (selectedDay && selectedMonth) {
+      return 'day';
+    } else if (selectedMonth) {
+      return 'month';
+    } else {
+      return 'year';
+    }
+  };
+
+  // Handle year selection
+  const handleYearSelect = (year) => {
+    setSelectedYear(year);
+    setSelectionStep('month');
+    console.log(`Year selected: ${year}`);
+  };
+
+  // Handle month selection
+  const handleMonthSelect = (month) => {
+    setSelectedMonth(month);
+    setSelectionStep('day');
+    console.log(`Month selected: ${months[month - 1].name} ${selectedYear}`);
+  };
+
+  // Handle day selection
+  const handleDaySelect = (day) => {
+    setSelectedDay(day);
+    console.log(`Day selected: ${months[selectedMonth - 1].name} ${day}, ${selectedYear}`);
+  };
+
+  // Skip to next step or finish
+  const handleSkip = () => {
+    if (selectionStep === 'month') {
+      setSelectionStep('day');
+    } else if (selectionStep === 'day') {
+      setShowDateDropdown(false);
+    }
+  };
+
+  // Finish selection
+  const handleFinish = () => {
+    setShowDateDropdown(false);
+    console.log(`Final selection: ${getCurrentFilterType()} - ${getDateDisplayText()}`);
+  };
+
+  // Reset selection
+  const handleReset = () => {
+    setSelectedMonth(null);
+    setSelectedDay(null);
+    setSelectionStep('year');
+  };
+
+  // Toggle date dropdown on click
+  const handleCalendarClick = () => {
+    setShowDateDropdown(!showDateDropdown);
+    if (!showDateDropdown) {
+      setSelectionStep('year');
+    }
+  };
+
+  // Handle predefined date range selection
+  const handleDateRangeSelection = (range) => {
+    if (range.value === 'custom') {
+      setIsCustomRange(true);
+      setSelectedDateRange('Custom');
+      setStartDate(null);
+      setEndDate(null);
+      // Don't close dropdown for custom - let user select dates
+    } else {
+      setIsCustomRange(false);
+      setSelectedDateRange(range.label);
+      
+      const today = new Date();
+      
+      // For "Today" and "Yesterday", both start and end dates should be the same
+      if (range.value === 'today') {
+        // Today: start = today, end = today
+        setStartDate(today.toISOString().split('T')[0]);
+        setEndDate(today.toISOString().split('T')[0]);
+      } else if (range.value === 'yesterday') {
+        // Yesterday: start = yesterday, end = yesterday
+        const yesterday = new Date(today);
+        yesterday.setDate(today.getDate() - 1);
+        setStartDate(yesterday.toISOString().split('T')[0]);
+        setEndDate(yesterday.toISOString().split('T')[0]);
+      } else {
+        // For ranges like "Last 7 Days", "Last 30 Days"
+        // start = today - N days, end = today
+        const start = new Date(today);
+        start.setDate(today.getDate() - range.days);
+        setStartDate(start.toISOString().split('T')[0]);
+        setEndDate(today.toISOString().split('T')[0]);
+      }
+      
+      setShowDateDropdown(false);
+    }
+  };
+
+  // Handle custom date selection
+  const handleCustomDateSelection = (date) => {
+    if (!startDate) {
+      setStartDate(date);
+    } else if (!endDate) {
+      if (new Date(date) >= new Date(startDate)) {
+        setEndDate(date);
+        setShowDateDropdown(false);
+      } else {
+        // If end date is before start date, swap them
+        setEndDate(startDate);
+        setStartDate(date);
+        setShowDateDropdown(false);
+      }
+    }
+  };
+
+  // Validate selected day when month or year changes
+  useEffect(() => {
+    if (selectedMonth && selectedDay) {
+      const daysInSelectedMonth = new Date(selectedYear, selectedMonth, 0).getDate();
+      if (selectedDay > daysInSelectedMonth) {
+        setSelectedDay(daysInSelectedMonth);
+      }
+    }
+  }, [selectedYear, selectedMonth, selectedDay]);
+
+  // Log date changes for debugging
+  useEffect(() => {
+    console.log(`Selected date: ${getCurrentFilterType()} - ${getDateDisplayText()}`);
+  }, [selectedYear, selectedMonth, selectedDay]);
+
+  // Get dynamic complaint metrics from API data
+  const getComplaintMetrics = () => {
+    const counts = calculateComplaintCounts();
+    
+    return [
     {
       title: 'Total Complaints',
-      value: '3,452',
+        value: loadingAnalytics ? '...' : formatNumber(counts.total),
       icon: List,
       color: '#3b82f6',
+        trend: 'up',
       chartData: {
         series: [{
-          data: [2800, 3000, 3200, 3452]
+            data: [counts.total * 0.8, counts.total * 0.9, counts.total * 0.95, counts.total]
         }],
         options: {
           chart: {
@@ -54,8 +817,8 @@ const ComplaintsContent = () => {
           yaxis: { 
             show: false,
             labels: { show: false },
-            min: 2600,
-            max: 3600,
+              min: counts.total * 0.7,
+              max: counts.total * 1.1,
             forceNiceScale: false,
             floating: false
           },
@@ -67,12 +830,13 @@ const ComplaintsContent = () => {
     },
     {
       title: 'Open Complaints',
-      value: '452',
+        value: loadingAnalytics ? '...' : formatNumber(counts.open),
       icon: List,
       color: '#ef4444',
+        trend: 'up',
       chartData: {
         series: [{
-          data: [400, 420, 440, 452]
+            data: [counts.open * 0.85, counts.open * 0.92, counts.open * 0.97, counts.open]
         }],
         options: {
           chart: {
@@ -96,7 +860,7 @@ const ComplaintsContent = () => {
           yaxis: { 
             labels: { show: false },
             min: 0,
-            max: 480
+              max: counts.open * 1.1
           },
           dataLabels: { enabled: false }
         }
@@ -104,12 +868,13 @@ const ComplaintsContent = () => {
     },
     {
       title: 'Verified',
-      value: '3,000',
+        value: loadingAnalytics ? '...' : formatNumber(counts.verified),
       icon: List,
       color: '#f97316',
+        trend: 'up',
       chartData: {
         series: [{
-          data: [2500, 2700, 2800, 3000]
+            data: [counts.verified * 0.82, counts.verified * 0.89, counts.verified * 0.93, counts.verified]
         }],
         options: {
           chart: {
@@ -133,7 +898,45 @@ const ComplaintsContent = () => {
           yaxis: { 
             labels: { show: false },
             min: 0,
-            max: 3200
+              max: counts.verified * 1.1
+            },
+            dataLabels: { enabled: false }
+          }
+        }
+      },
+      {
+        title: 'Resolved',
+        value: loadingAnalytics ? '...' : formatNumber(counts.resolved),
+        icon: List,
+        color: '#8b5cf6',
+        trend: 'up',
+        chartData: {
+          series: [{
+            data: [counts.resolved * 0.8, counts.resolved * 0.88, counts.resolved * 0.92, counts.resolved]
+          }],
+          options: {
+            chart: {
+              type: 'area',
+              height: 40,
+              sparkline: { enabled: true }
+            },
+            stroke: { curve: 'smooth', width: 2, colors: ['#8b5cf6'] },
+            fill: {
+              type: 'gradient',
+              gradient: {
+                shadeIntensity: 1,
+                opacityFrom: 0.3,
+                opacityTo: 0.05,
+                stops: [0, 100]
+              }
+            },
+            tooltip: { enabled: false },
+            grid: { show: false },
+            xaxis: { labels: { show: false } },
+            yaxis: { 
+              labels: { show: false },
+              min: 0,
+              max: counts.resolved * 1.1
           },
           dataLabels: { enabled: false }
         }
@@ -141,12 +944,13 @@ const ComplaintsContent = () => {
     },
     {
       title: 'Disposed',
-      value: '2,000',
+        value: loadingAnalytics ? '...' : formatNumber(counts.disposed),
       icon: List,
       color: '#10b981',
+        trend: 'up',
       chartData: {
         series: [{
-          data: [1500, 1700, 1800, 2000]
+            data: [counts.disposed * 0.75, counts.disposed * 0.85, counts.disposed * 0.9, counts.disposed]
         }],
         options: {
           chart: {
@@ -170,87 +974,56 @@ const ComplaintsContent = () => {
           yaxis: { 
             labels: { show: false },
             min: 0,
-            max: 2100
+              max: counts.disposed * 1.1
           },
           dataLabels: { enabled: false }
         }
       }
     }
   ];
+  };
 
-  const complaintsData = [
-    {
-      id: 'COMP-001',
-      title: 'Water Supply Issue',
-      description: 'No water supply in Ward 5 for the past 3 days',
-      status: 'Open',
-      priority: 'High',
-      location: 'Ward 5, Block A',
-      submittedBy: 'Rajesh Kumar',
-      submittedDate: '2025-01-15',
-      assignedTo: 'Sanitation Team',
-      statusColor: '#ef4444'
-    },
-    {
-      id: 'COMP-002',
-      title: 'Garbage Collection Delay',
-      description: 'Garbage not collected for 2 days in residential area',
-      status: 'In Progress',
-      priority: 'Medium',
-      location: 'Ward 3, Block B',
-      submittedBy: 'Priya Sharma',
-      submittedDate: '2025-01-14',
-      assignedTo: 'Waste Management',
-      statusColor: '#f59e0b'
-    },
-    {
-      id: 'COMP-003',
-      title: 'Street Light Repair',
-      description: 'Street light not working near school gate',
-      status: 'Resolved',
-      priority: 'Low',
-      location: 'Ward 2, Block C',
-      submittedBy: 'Amit Singh',
-      submittedDate: '2025-01-13',
-      assignedTo: 'Electrical Team',
-      statusColor: '#10b981'
-    },
-    {
-      id: 'COMP-004',
-      title: 'Drainage Problem',
-      description: 'Water logging due to blocked drainage',
-      status: 'Closed',
-      priority: 'High',
-      location: 'Ward 1, Block D',
-      submittedBy: 'Sunita Devi',
-      submittedDate: '2025-01-12',
-      assignedTo: 'Drainage Team',
-      statusColor: '#6b7280'
-    },
-    {
-      id: 'COMP-005',
-      title: 'Road Repair Required',
-      description: 'Potholes on main road causing traffic issues',
-      status: 'Open',
-      priority: 'Medium',
-      location: 'Ward 4, Block E',
-      submittedBy: 'Vikram Patel',
-      submittedDate: '2025-01-11',
-      assignedTo: 'Road Maintenance',
-      statusColor: '#ef4444'
-    }
-  ];
+  const complaintMetrics = getComplaintMetrics();
+
+  // Use dynamic complaints data from API, or empty array if loading/error
+  const complaintsData = complaintsListData.map(complaint => ({
+    id: `COMP-${complaint.id}`,
+    title: complaint.complaint_type || 'N/A',
+    description: complaint.description || 'No description',
+    status: complaint.status || 'OPEN',
+    priority: 'Medium', // API doesn't provide priority, using default
+    location: complaint.location || `${complaint.village_name}, ${complaint.block_name}`,
+    submittedBy: complaint.mobile_number || 'N/A',
+    submittedDate: complaint.created_at ? new Date(complaint.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A',
+    assignedTo: complaint.assigned_worker || 'Unassigned',
+    statusColor: complaint.status === 'OPEN' ? '#ef4444' : 
+                 complaint.status === 'VERIFIED' ? '#f97316' :
+                 complaint.status === 'RESOLVED' ? '#8b5cf6' : '#10b981',
+    village: complaint.village_name,
+    block: complaint.block_name,
+    district: complaint.district_name,
+    lat: complaint.lat,
+    long: complaint.long,
+    media: complaint.media_urls || [],
+    comments: complaint.comments || []
+  }));
+
 
   const getStatusIcon = (status) => {
-    switch (status) {
-      case 'Open':
+    // Handle both old format ("Open") and new API format ("OPEN", "VERIFIED")
+    const normalizedStatus = status?.toUpperCase();
+    
+    switch (normalizedStatus) {
+      case 'OPEN':
         return <XCircle style={{ width: '16px', height: '16px', color: '#ef4444' }} />;
-      case 'In Progress':
+      case 'VERIFIED':
+      case 'IN PROGRESS':
         return <Clock style={{ width: '16px', height: '16px', color: '#f59e0b' }} />;
-      case 'Resolved':
+      case 'RESOLVED':
+        return <CheckCircle style={{ width: '16px', height: '16px', color: '#8b5cf6' }} />;
+      case 'CLOSED':
+      case 'DISPOSED':
         return <CheckCircle style={{ width: '16px', height: '16px', color: '#10b981' }} />;
-      case 'Closed':
-        return <CheckCircle style={{ width: '16px', height: '16px', color: '#6b7280' }} />;
       default:
         return <Clock style={{ width: '16px', height: '16px', color: '#6b7280' }} />;
     }
@@ -270,11 +1043,31 @@ const ComplaintsContent = () => {
   };
 
   const filteredComplaints = complaintsData.filter(complaint => {
-    const matchesFilter = activeFilter === 'All' || complaint.status === activeFilter;
+    // Normalize status comparison - handle both API format (OPEN) and UI format (Open)
+    const normalizedComplaintStatus = complaint.status?.toUpperCase();
+    const normalizedFilterStatus = activeFilter?.toUpperCase();
+    
+    const matchesFilter = activeFilter === 'All' || 
+                         normalizedComplaintStatus === normalizedFilterStatus ||
+                         (activeFilter === 'In Progress' && normalizedComplaintStatus === 'VERIFIED');
+    
     const matchesSearch = complaint.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          complaint.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          complaint.id.toLowerCase().includes(searchTerm.toLowerCase());
     return matchesFilter && matchesSearch;
+  });
+
+  // Debug logging
+  console.log('🔍 Complaints Data Debug:', {
+    rawDataLength: complaintsListData.length,
+    transformedDataLength: complaintsData.length,
+    loadingComplaints,
+    complaintsError,
+    sampleTransformed: complaintsData.slice(0, 2),
+    filteredComplaintsLength: filteredComplaints.length,
+    activeFilter,
+    searchTerm,
+    uniqueStatuses: [...new Set(complaintsData.map(c => c.status))]
   });
 
   return (
@@ -317,7 +1110,7 @@ const ComplaintsContent = () => {
             {scopeButtons.map((scope) => (
               <button
                 key={scope}
-                onClick={() => setActiveScope(scope)}
+                onClick={() => handleScopeChange(scope)}
                 style={{
                   padding: '3px 10px',
                   borderRadius: '8px',
@@ -336,29 +1129,160 @@ const ComplaintsContent = () => {
           </div>
 
           {/* Location dropdown */}
-          <div style={{
+          <div 
+            data-location-dropdown
+            style={{
             position: 'relative',
             minWidth: '200px'
           }}>
-            <button style={{
+            <button 
+              onClick={() => activeScope !== 'State' && setShowLocationDropdown(!showLocationDropdown)}
+              disabled={activeScope === 'State'}
+              style={{
               width: '100%',
               padding: '5px 12px',
               border: '1px solid #d1d5db',
               borderRadius: '10px',
-              backgroundColor: 'white',
+                backgroundColor: activeScope === 'State' ? '#f9fafb' : 'white',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              cursor: 'pointer',
+                cursor: activeScope === 'State' ? 'not-allowed' : 'pointer',
               fontSize: '14px',
-              color: '#6b7280'
-            }}>
+                color: activeScope === 'State' ? '#9ca3af' : '#6b7280',
+                opacity: activeScope === 'State' ? 0.6 : 1
+              }}
+            >
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <MapPin style={{ width: '16px', height: '16px', color: '#9ca3af' }} />
-                <span>Select option</span>
+                <span>{selectedLocation}</span>
               </div>
-              <ChevronDown style={{ width: '16px', height: '16px', color: '#9ca3af' }} />
+              <ChevronDown style={{ 
+                width: '16px', 
+                height: '16px', 
+                color: activeScope === 'State' ? '#d1d5db' : '#9ca3af' 
+              }} />
             </button>
+            
+            {/* Location Dropdown Menu */}
+            {showLocationDropdown && activeScope !== 'State' && (
+              <div 
+                key={`dropdown-${activeScope}`}
+                style={{
+                position: 'absolute',
+                top: '100%',
+                left: 0,
+                right: 0,
+                backgroundColor: 'white',
+                border: '1px solid #d1d5db',
+                borderRadius: '8px',
+                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                zIndex: 1000,
+                marginTop: '4px',
+                maxHeight: '200px',
+                overflowY: 'auto'
+              }}>
+                {/* Breadcrumb/Back button for hierarchical navigation */}
+                {((activeScope === 'Blocks' && dropdownLevel === 'blocks') || 
+                  (activeScope === 'GPs' && (dropdownLevel === 'blocks' || dropdownLevel === 'gps'))) && (
+                  <div style={{
+                    padding: '8px 12px',
+                    borderBottom: '1px solid #f3f4f6',
+                    backgroundColor: '#f9fafb',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    color: '#6b7280',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}
+                  onClick={() => {
+                    if (activeScope === 'Blocks' && dropdownLevel === 'blocks') {
+                      // Go back to districts
+                      setDropdownLevel('districts');
+                      setSelectedDistrictForHierarchy(null);
+                      setSelectedLocation('Select District');
+                    } else if (activeScope === 'GPs' && dropdownLevel === 'blocks') {
+                      // Go back to districts
+                      setDropdownLevel('districts');
+                      setSelectedDistrictForHierarchy(null);
+                      setSelectedLocation('Select District');
+                    } else if (activeScope === 'GPs' && dropdownLevel === 'gps') {
+                      // Go back to blocks
+                      setDropdownLevel('blocks');
+                      setSelectedBlockForHierarchy(null);
+                      setSelectedLocation('Select Block');
+                    }
+                  }}>
+                    <span>←</span>
+                    <span>
+                      {activeScope === 'Blocks' && dropdownLevel === 'blocks' ? 'Back to Districts' :
+                       activeScope === 'GPs' && dropdownLevel === 'blocks' ? 'Back to Districts' :
+                       activeScope === 'GPs' && dropdownLevel === 'gps' ? 'Back to Blocks' : ''}
+                    </span>
+          </div>
+                )}
+                
+                {/* Level indicator */}
+                {((activeScope === 'Blocks' && dropdownLevel !== 'districts') || 
+                  (activeScope === 'GPs' && dropdownLevel !== 'districts')) && (
+                  <div style={{
+                    padding: '8px 12px',
+                    backgroundColor: '#f3f4f6',
+                    fontSize: '12px',
+                    color: '#6b7280',
+                    fontWeight: '500',
+                    borderBottom: '1px solid #e5e7eb'
+                  }}>
+                    {activeScope === 'Blocks' && dropdownLevel === 'blocks' ? 
+                      `Blocks in ${selectedDistrictForHierarchy?.name}` :
+                     activeScope === 'GPs' && dropdownLevel === 'blocks' ? 
+                      `Blocks in ${selectedDistrictForHierarchy?.name}` :
+                     activeScope === 'GPs' && dropdownLevel === 'gps' ? 
+                      `GPs in ${selectedBlockForHierarchy?.name}` : ''}
+                  </div>
+                )}
+                
+                {(loadingDistricts && activeScope === 'Districts') || (loadingBlocks && activeScope === 'Blocks') || (loadingGPs && activeScope === 'GPs') ? (
+                  <div style={{
+                    padding: '8px 12px',
+                    fontSize: '14px',
+                    color: '#6b7280',
+                    textAlign: 'center'
+                  }}>
+                    Loading {activeScope.toLowerCase()}...
+                  </div>
+                ) : (
+                  getLocationOptions().map((location, index) => (
+                    <div
+                      key={`${activeScope}-${location.id}`}
+                      onClick={() => {
+                        if (activeScope === 'Districts') {
+                          // Direct selection for districts
+                          trackDropdownChange(location.name, location.id, location.id);
+                          updateLocationSelection('Districts', location.name, location.id, location.id, null, null, 'dropdown_change');
+                          console.log('Selected district ID:', location.id, 'Name:', location.name);
+                          setShowLocationDropdown(false);
+                        } else if (activeScope === 'Blocks' || activeScope === 'GPs') {
+                          // Use hierarchical selection for blocks and GPs
+                          handleHierarchicalSelection(location);
+                        }
+                      }}
+                      style={{
+                        padding: '8px 12px',
+                        cursor: 'pointer',
+                        fontSize: '14px',
+                        color: '#374151',
+                        backgroundColor: selectedLocation === location.name ? '#f3f4f6' : 'transparent',
+                        borderBottom: index < getLocationOptions().length - 1 ? '1px solid #f3f4f6' : 'none'
+                      }}
+                    >
+                      {location.name}
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -372,7 +1296,7 @@ const ComplaintsContent = () => {
           color: '#6B7280',
           fontWeight: '600'
         }}>
-          Rajasthan / All
+          {activeScope === 'State' ? selectedLocation : `Rajasthan / ${selectedLocation}`}
         </span>
       </div>
 
@@ -411,21 +1335,262 @@ const ComplaintsContent = () => {
               color: '#6b7280',
               margin: 0
             }}>
-              • January 2025
+              • {getDateDisplayText()}
             </span>
           </div>
-          <div style={{
+          <div 
+            onClick={handleCalendarClick}
+            data-date-dropdown
+            style={{
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
             color: '#6b7280',
-            fontSize: '14px'
-          }}>
+              fontSize: '14px',
+              padding: '8px 12px',
+              border: '1px solid #d1d5db',
+              borderRadius: '8px',
+              backgroundColor: 'white',
+              cursor: 'pointer',
+              position: 'relative',
+              transition: 'all 0.2s'
+            }}
+          >
             <Calendar style={{ width: '16px', height: '16px' }} />
-            <span>Today</span>
+            <span>{getDateDisplayText()}</span>
             <ChevronDown style={{ width: '16px', height: '16px' }} />
+            
+            {/* Modern Date Range Picker */}
+            {showDateDropdown && (
+              <div 
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  position: 'absolute',
+                  top: '100%',
+                  right: '0',
+                  backgroundColor: 'white',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '12px',
+                  boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)',
+                  zIndex: 1000,
+                  marginTop: '8px',
+                  width: '600px',
+                  maxWidth: '90vw',
+                  display: 'flex',
+                  overflow: 'hidden'
+                }}
+              >
+                {/* Left Sidebar - Predefined Ranges */}
+                <div style={{
+                  width: '200px',
+                  backgroundColor: '#f8fafc',
+                  borderRight: '1px solid #e2e8f0',
+                  padding: '16px 0'
+                }}>
+                  <div style={{ padding: '0 16px 12px', borderBottom: '1px solid #e2e8f0' }}>
+                    <h3 style={{ 
+                      margin: 0, 
+                      fontSize: '14px', 
+                      fontWeight: '600', 
+                      color: '#1e293b' 
+                    }}>
+                      Quick Select
+                    </h3>
+          </div>
+
+                  {dateRanges.map((range, index) => (
+                    <div
+                      key={range.value}
+                      onClick={() => handleDateRangeSelection(range)}
+                      style={{
+                        padding: '12px 16px',
+                        cursor: 'pointer',
+                        fontSize: '14px',
+                        color: range.value === 'custom' ? '#10b981' : '#475569',
+                        backgroundColor: selectedDateRange === range.label ? '#f0fdf4' : 'transparent',
+                        borderLeft: selectedDateRange === range.label ? '3px solid #10b981' : '3px solid transparent',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      {range.label}
+                    </div>
+                  ))}
+        </div>
+
+                {/* Right Side - Calendar View */}
+                <div style={{
+                  flex: 1,
+                  padding: '16px',
+                  minHeight: '300px'
+                }}>
+                  {isCustomRange ? (
+                    <div>
+                      <h3 style={{ 
+                        margin: '0 0 16px 0', 
+                        fontSize: '14px', 
+                        fontWeight: '600', 
+                        color: '#1e293b' 
+                      }}>
+                        Select Date Range
+                      </h3>
+                      
+                      {/* Custom Date Inputs */}
+                      <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
+                        <div>
+                          <label style={{ 
+                            display: 'block', 
+                            fontSize: '12px', 
+                            color: '#64748b', 
+                            marginBottom: '4px' 
+                          }}>
+                            Start Date
+                          </label>
+                          <input
+                            type="date"
+                            value={startDate || ''}
+                            onChange={(e) => setStartDate(e.target.value)}
+                            style={{
+                              padding: '8px 12px',
+                              border: '1px solid #d1d5db',
+                              borderRadius: '6px',
+                              fontSize: '14px',
+                              width: '140px'
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ 
+                            display: 'block', 
+                            fontSize: '12px',
+                            color: '#64748b', 
+                            marginBottom: '4px' 
+                          }}>
+                            End Date
+                          </label>
+                          <input
+                            type="date"
+                            value={endDate || ''}
+                            onChange={(e) => setEndDate(e.target.value)}
+                            style={{
+                              padding: '8px 12px',
+                              border: '1px solid #d1d5db',
+                              borderRadius: '6px',
+                              fontSize: '14px',
+                              width: '140px'
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Action Buttons */}
+                      <div style={{ 
+                        display: 'flex', 
+                        gap: '8px', 
+                        justifyContent: 'flex-end'
+                      }}>
+                        <button
+                          onClick={() => {
+                            const today = new Date();
+                            const todayStr = today.toISOString().split('T')[0];
+                            setStartDate(todayStr);
+                            setEndDate(todayStr);
+                            setIsCustomRange(false);
+                            setSelectedDateRange('Today');
+                          }}
+                          style={{
+                            padding: '8px 16px',
+                            border: '1px solid #d1d5db',
+                            borderRadius: '6px',
+                            backgroundColor: '#f9fafb',
+                            color: '#6b7280',
+                            fontSize: '14px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Cancel
+                        </button>
+                        
+                        <button
+                          onClick={() => setShowDateDropdown(false)}
+                          disabled={!startDate || !endDate}
+                          style={{
+                            padding: '8px 16px',
+                            backgroundColor: startDate && endDate ? '#10b981' : '#d1d5db',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '6px',
+                            fontSize: '14px',
+                            cursor: startDate && endDate ? 'pointer' : 'not-allowed'
+                          }}
+                        >
+                          Apply
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <h3 style={{ 
+                        margin: '0 0 16px 0', 
+                        fontSize: '14px', 
+                        fontWeight: '600', 
+                        color: '#1e293b' 
+                      }}>
+                        Selected Range
+                      </h3>
+                      
+                      <div style={{
+                        padding: '12px',
+                        backgroundColor: '#f0fdf4',
+                        border: '1px solid #bbf7d0',
+                        borderRadius: '6px',
+                        marginBottom: '16px'
+                      }}>
+                        <div style={{ fontSize: '14px', color: '#166534', fontWeight: '500' }}>
+                          {selectedDateRange}
+                        </div>
+                        {startDate && endDate && (
+                          <div style={{ fontSize: '12px', color: '#16a34a', marginTop: '4px' }}>
+                            {new Date(startDate).toLocaleDateString()} - {new Date(endDate).toLocaleDateString()}
+                          </div>
+                        )}
+                      </div>
+                      
+                      <button
+                        onClick={() => setShowDateDropdown(false)}
+                        style={{
+                          padding: '8px 16px',
+                          backgroundColor: '#10b981',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '6px',
+                          fontSize: '14px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Apply
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
+
+        {/* Error Display */}
+        {analyticsError && (
+          <div style={{
+            padding: '16px',
+            backgroundColor: '#fef2f2',
+            border: '1px solid #fecaca',
+            borderRadius: '8px',
+            marginBottom: '24px',
+            color: '#dc2626',
+            fontSize: '14px'
+          }}>
+            Error loading analytics data: {analyticsError}
+          </div>
+        )}
 
         {/* Metrics Cards */}
         <div style={{
@@ -506,14 +1671,21 @@ const ComplaintsContent = () => {
             flexDirection: 'column',
             gap: '12px'
           }}>
-            {/* Open Complaints - Full Width */}
+            {/* Top Row - Open and Verified */}
             <div style={{
-                
+              display: 'flex',
+              gap: '12px',
+              width: '98%',
+              marginBottom: '12px'
+            }}>
+              {complaintMetrics.slice(1, 3).map((item, index) => (
+                <div key={index} style={{
               backgroundColor: 'white',
               padding: '16px',
               borderRadius: '8px',
               border: '1px solid #e5e7eb',
-              position: 'relative'
+                  position: 'relative',
+                  width: '50%'
             }}>
               {/* Info icon */}
               <div style={{
@@ -535,7 +1707,7 @@ const ComplaintsContent = () => {
                   width: '8px',
                   height: '8px',
                   borderRadius: '50%',
-                  backgroundColor: complaintMetrics[1].color
+                      backgroundColor: item.color
                 }}></div>
                 <div style={{
                   display: 'flex',
@@ -547,7 +1719,7 @@ const ComplaintsContent = () => {
                     color: '#6b7280',
                     fontWeight: '500'
                   }}>
-                    {complaintMetrics[1].title}
+                        {item.title}
                   </span>
                 </div>
               </div>
@@ -559,27 +1731,29 @@ const ComplaintsContent = () => {
                 color: '#111827',
                 marginBottom: '12px'
               }}>
-                {complaintMetrics[1].value}
+                    {item.value}
               </div>
 
               {/* Mini chart */}
               <div style={{ height: '40px' }}>
                 <Chart
-                  options={complaintMetrics[1].chartData.options}
-                  series={complaintMetrics[1].chartData.series}
+                      options={item.chartData.options}
+                      series={item.chartData.series}
                   type="area"
                   height={40}
                 />
               </div>
+                </div>
+              ))}
             </div>
 
-            {/* Verified and Disposed - In Same Row */}
+            {/* Bottom Row - Resolved and Disposed */}
             <div style={{
               display: 'flex',
               gap: '12px',
               width: '98%'
             }}>
-              {complaintMetrics.slice(2).map((item, index) => (
+              {complaintMetrics.slice(3).map((item, index) => (
                 <div key={index} style={{
                   backgroundColor: 'white',
                   padding: '16px',
@@ -685,7 +1859,7 @@ const ComplaintsContent = () => {
               fontSize: '14px',
               color: '#6b7280'
             }}>
-              12, January 2025
+              {getDateDisplayText()}
             </span>
           </div>
 
@@ -695,26 +1869,68 @@ const ComplaintsContent = () => {
             gap: '16px'
           }}>
             {/* Status Filter */}
-            <div style={{
-              position: 'relative',
-              minWidth: '120px'
-            }}>
-              <button style={{
-                width: '100%',
-                padding: '8px 12px',
-                border: '1px solid #d1d5db',
-                borderRadius: '8px',
-                backgroundColor: 'white',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                cursor: 'pointer',
-                fontSize: '14px',
-                color: '#374151'
-              }}>
-                <span>Open</span>
+            <div 
+              data-filter-dropdown
+              style={{
+                position: 'relative',
+                minWidth: '120px'
+              }}
+            >
+              <button 
+                onClick={() => setShowFilterDropdown(!showFilterDropdown)}
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '8px',
+                  backgroundColor: 'white',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  color: '#374151'
+                }}
+              >
+                <span>{activeFilter}</span>
                 <ChevronDown style={{ width: '16px', height: '16px', color: '#9ca3af' }} />
               </button>
+              
+              {/* Filter Dropdown */}
+              {showFilterDropdown && (
+                <div style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  right: 0,
+                  backgroundColor: 'white',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '8px',
+                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                  zIndex: 1000,
+                  marginTop: '4px'
+                }}>
+                  {filterButtons.map((filter) => (
+                    <div
+                      key={filter}
+                      onClick={() => {
+                        setActiveFilter(filter);
+                        setShowFilterDropdown(false);
+                      }}
+                      style={{
+                        padding: '8px 12px',
+                        cursor: 'pointer',
+                        fontSize: '14px',
+                        color: '#374151',
+                        backgroundColor: activeFilter === filter ? '#f3f4f6' : 'transparent',
+                        borderBottom: filter !== filterButtons[filterButtons.length - 1] ? '1px solid #f3f4f6' : 'none'
+                      }}
+                    >
+                      {filter}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Search Bar */}
@@ -734,6 +1950,8 @@ const ComplaintsContent = () => {
               <input
                 type="text"
                 placeholder="Search"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
                 style={{
                   width: '100%',
                   paddingLeft: '40px',
@@ -883,87 +2101,124 @@ const ComplaintsContent = () => {
               </tr>
             </thead>
             <tbody>
-              {Array.from({ length: 5 }, (_, index) => (
-                <tr key={index} style={{
-                  borderBottom: '1px solid #f3f4f6'
-                }}>
-                  <td style={{
-                    padding: '12px',
+              {loadingComplaints ? (
+                <tr>
+                  <td colSpan="5" style={{
+                    padding: '40px',
+                    textAlign: 'center',
                     fontSize: '14px',
-                    color: '#374151'
+                    color: '#6b7280'
                   }}>
-                    <div>
-                      <div style={{
-                        fontWeight: '500',
-                        marginBottom: '2px'
-                      }}>
-                        Name
-                      </div>
-                      <div style={{
-                        fontSize: '12px',
-                        color: '#6b7280'
-                      }}>
-                        Contact
-                      </div>
-                    </div>
-                  </td>
-                  <td style={{
-                    padding: '12px',
-                    fontSize: '14px',
-                    color: '#374151'
-                  }}>
-                    Gram panchayat
-                  </td>
-                  <td style={{
-                    padding: '12px',
-                    fontSize: '14px',
-                    color: '#374151'
-                  }}>
-                    Door to door collection issue
-                  </td>
-                  <td style={{
-                    padding: '12px',
-                    fontSize: '14px',
-                    color: '#374151'
-                  }}>
-                    12 July 2025
-                  </td>
-                  <td style={{
-                    padding: '12px',
-                    fontSize: '14px'
-                  }}>
-                    <div style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      width: '90%'
-                    }}>
-                      <div style={{
-                        display: 'inline-block',
-                        backgroundColor: '#fef2f2',
-                        color: '#dc2626',
-                        padding: '4px 8px',
-                        borderRadius: '12px',
-                        fontSize: '12px',
-                        fontWeight: '500'
-                      }}>
-                        Open
-                      </div>
-                      <button style={{
-                        padding: '6px 12px',
-                        backgroundColor: 'transparent',
-                        border: '1px solid #d1d5db',
-                        borderRadius: '6px',
-                        fontSize: '12px',
-                        color: '#374151',
-                        cursor: 'pointer'
-                      }}>
-                        Send notice
-                      </button>
-                    </div>
+                    Loading complaints...
                   </td>
                 </tr>
-              ))}
+              ) : complaintsError ? (
+                <tr>
+                  <td colSpan="5" style={{
+                    padding: '40px',
+                    textAlign: 'center',
+                    fontSize: '14px',
+                    color: '#dc2626'
+                  }}>
+                    Error loading complaints: {complaintsError}
+                  </td>
+                </tr>
+              ) : filteredComplaints.length === 0 ? (
+                <tr>
+                  <td colSpan="5" style={{
+                    padding: '40px',
+                    textAlign: 'center',
+                    fontSize: '14px',
+                    color: '#6b7280'
+                  }}>
+                    No complaints found
+                  </td>
+                </tr>
+              ) : (
+                filteredComplaints.map((complaint, index) => (
+                  <tr key={complaint.id || index} style={{
+                    borderBottom: '1px solid #f3f4f6'
+                  }}>
+                    <td style={{
+                      padding: '12px',
+                      fontSize: '14px',
+                      color: '#374151'
+                    }}>
+                      <div>
+                        <div style={{
+                          fontWeight: '500',
+                          marginBottom: '2px'
+                        }}>
+                          {complaint.submittedBy || 'N/A'}
+                        </div>
+                        <div style={{
+                          fontSize: '12px',
+                          color: '#6b7280'
+                        }}>
+                          {complaint.submittedBy || 'N/A'}
+                        </div>
+                      </div>
+                    </td>
+                    <td style={{
+                      padding: '12px',
+                      fontSize: '14px',
+                      color: '#374151'
+                    }}>
+                      {complaint.location || 'N/A'}
+                    </td>
+                    <td style={{
+                      padding: '12px',
+                      fontSize: '14px',
+                      color: '#374151'
+                    }}>
+                      {complaint.title || 'N/A'}
+                    </td>
+                    <td style={{
+                      padding: '12px',
+                      fontSize: '14px',
+                      color: '#374151'
+                    }}>
+                      {complaint.submittedDate || 'N/A'}
+                    </td>
+                    <td style={{
+                      padding: '12px',
+                      fontSize: '14px'
+                    }}>
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        width: '90%'
+                      }}>
+                        <div style={{
+                          display: 'inline-block',
+                          backgroundColor: complaint.statusColor === '#ef4444' ? '#fef2f2' : 
+                                         complaint.statusColor === '#f97316' ? '#fff7ed' :
+                                         complaint.statusColor === '#8b5cf6' ? '#faf5ff' : '#f0fdf4',
+                          color: complaint.statusColor,
+                          padding: '4px 8px',
+                          borderRadius: '12px',
+                          fontSize: '12px',
+                          fontWeight: '500'
+                        }}>
+                          {complaint.status || 'N/A'}
+                        </div>
+                        <button style={{
+                          padding: '6px 12px',
+                          backgroundColor: 'transparent',
+                          border: '1px solid #d1d5db',
+                          borderRadius: '6px',
+                          fontSize: '12px',
+                          color: '#374151',
+                          cursor: 'pointer'
+                        }}>
+                          Send notice
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

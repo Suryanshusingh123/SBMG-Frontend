@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { MapPin, ChevronDown, Calendar, List, Info, Search, Filter, Download, Eye, Edit, Trash2, CheckCircle, XCircle, Clock, Users, UserCheck, UserX } from 'lucide-react';
 import Chart from 'react-apexcharts';
+import apiClient from '../../services/api';
 
 const SegmentedGauge = ({ percentage, label = "Present" }) => {
   // Calculate which segments should be filled based on percentage
@@ -137,17 +138,457 @@ const SegmentedGauge = ({ percentage, label = "Present" }) => {
 };
 
 const AttendanceContent = () => {
-    const [activeFilter, setActiveFilter] = useState('All');
-    const [searchTerm, setSearchTerm] = useState('');
-    const [activeScope, setActiveScope] = useState('State');
-    const [activePerformance, setActivePerformance] = useState('Time');
+  // Location state management
+  const [activeScope, setActiveScope] = useState('State');
+  const [selectedLocation, setSelectedLocation] = useState('Rajasthan');
+  const [selectedLocationId, setSelectedLocationId] = useState(null);
+  const [selectedDistrictId, setSelectedDistrictId] = useState(null);
+  const [selectedBlockId, setSelectedBlockId] = useState(null);
+  const [selectedGPId, setSelectedGPId] = useState(null);
+  const [dropdownLevel, setDropdownLevel] = useState('districts');
+  const [selectedDistrictForHierarchy, setSelectedDistrictForHierarchy] = useState(null);
+  const [selectedBlockForHierarchy, setSelectedBlockForHierarchy] = useState(null);
   
-    const scopeButtons = ['State', 'Districts', 'Blocks', 'GPs'];
-    const performanceButtons = ['Time', 'Location'];
+  // UI controls state
+  const [showLocationDropdown, setShowLocationDropdown] = useState(false);
+  const [districts, setDistricts] = useState([]);
+  const [loadingDistricts, setLoadingDistricts] = useState(false);
+  const [blocks, setBlocks] = useState([]);
+  const [loadingBlocks, setLoadingBlocks] = useState(false);
+  const [gramPanchayats, setGramPanchayats] = useState([]);
+  const [loadingGPs, setLoadingGPs] = useState(false);
   
-    const filterButtons = ['All', 'Present', 'Absent', 'Leave', 'Holiday'];
+  // Attendance specific state
+  const [activeFilter, setActiveFilter] = useState('All');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [activePerformance, setActivePerformance] = useState('Time');
 
-    const attendanceMetrics = [
+  // Date selection state
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState(null); // null means not selected
+  const [selectedDay, setSelectedDay] = useState(null); // null means not selected
+  const [showDateDropdown, setShowDateDropdown] = useState(false);
+  const [selectionStep, setSelectionStep] = useState('year'); // 'year', 'month', 'day'
+  
+  // Date range state
+  const [selectedDateRange, setSelectedDateRange] = useState('Today');
+  const [startDate, setStartDate] = useState(() => {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  });
+  const [endDate, setEndDate] = useState(() => {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  });
+  const [isCustomRange, setIsCustomRange] = useState(false);
+  
+  const scopeButtons = ['State', 'Districts', 'Blocks', 'GPs'];
+  const performanceButtons = ['Time', 'Location'];
+  const filterButtons = ['All', 'Present', 'Absent', 'Leave', 'Holiday'];
+
+  // Predefined date ranges
+  const dateRanges = [
+    { label: 'Today', value: 'today', days: 0 },
+    { label: 'Yesterday', value: 'yesterday', days: 1 },
+    { label: 'Last 7 Days', value: 'last7days', days: 7 },
+    { label: 'Last 30 Days', value: 'last30days', days: 30 },
+    { label: 'Last 60 Days', value: 'last60days', days: 60 },
+    { label: 'Custom', value: 'custom', days: null }
+  ];
+
+  // Months array
+  const months = [
+    { value: 1, name: 'January' },
+    { value: 2, name: 'February' },
+    { value: 3, name: 'March' },
+    { value: 4, name: 'April' },
+    { value: 5, name: 'May' },
+    { value: 6, name: 'June' },
+    { value: 7, name: 'July' },
+    { value: 8, name: 'August' },
+    { value: 9, name: 'September' },
+    { value: 10, name: 'October' },
+    { value: 11, name: 'November' },
+    { value: 12, name: 'December' }
+  ];
+
+  // Helper functions for location management
+  const trackTabChange = (scope) => {
+    console.log('Tab changed to:', scope);
+  };
+  
+  const trackDropdownChange = (location) => {
+    console.log('Dropdown changed to:', location);
+  };
+  
+  const getCurrentLocationInfo = () => {
+    return {
+      scope: activeScope,
+      location: selectedLocation,
+      districtId: selectedDistrictId,
+      blockId: selectedBlockId,
+      gpId: selectedGPId
+    };
+  };
+  
+  const updateLocationSelection = (scope, location, locationId, districtId, blockId, gpId, changeType) => {
+    console.log('🔄 updateLocationSelection called:', { scope, location, locationId, districtId, blockId, gpId, changeType });
+    setActiveScope(scope);
+    setSelectedLocation(location);
+    setSelectedLocationId(locationId);
+    setSelectedDistrictId(districtId);
+    setSelectedBlockId(blockId);
+    setSelectedGPId(gpId);
+    console.log('✅ Location state updated');
+  };
+
+  // Fetch districts from API
+  const fetchDistricts = async () => {
+    try {
+      setLoadingDistricts(true);
+      const response = await apiClient.get('/geography/districts?skip=0&limit=100');
+      console.log('Districts API Response:', response.data);
+      setDistricts(response.data);
+    } catch (error) {
+      console.error('Error fetching districts:', error);
+    } finally {
+      setLoadingDistricts(false);
+    }
+  };
+
+  // Fetch blocks from API
+  const fetchBlocks = async () => {
+    try {
+      setLoadingBlocks(true);
+      const response = await apiClient.get('/geography/blocks?skip=0&limit=100');
+      console.log('Blocks API Response:', response.data);
+      setBlocks(response.data);
+    } catch (error) {
+      console.error('Error fetching blocks:', error);
+    } finally {
+      setLoadingBlocks(false);
+    }
+  };
+
+  // Fetch gram panchayats from API
+  const fetchGramPanchayats = async () => {
+    try {
+      setLoadingGPs(true);
+      console.log('🔄 Fetching GPs...');
+      const response = await apiClient.get('/geography/grampanchayats?skip=0&limit=100');
+      console.log('✅ GPs API Response:', response.data);
+      console.log('📊 Number of GPs fetched:', response.data?.length || 0);
+      setGramPanchayats(response.data);
+    } catch (error) {
+      console.error('❌ Error fetching gram panchayats:', error);
+      setGramPanchayats([]);
+    } finally {
+      setLoadingGPs(false);
+    }
+  };
+
+  // Handle scope change
+  const handleScopeChange = (scope) => {
+    console.log('Scope changed to:', scope);
+    trackTabChange(scope);
+    setActiveScope(scope);
+    setShowLocationDropdown(false);
+    
+    // Use updateLocationSelection like dashboard for proper state management
+    if (scope === 'State') {
+      // For State scope, set Rajasthan as default and disable dropdown
+      updateLocationSelection('State', 'Rajasthan', null, null, null, null, 'tab_change');
+      setDropdownLevel('districts');
+      setSelectedDistrictForHierarchy(null);
+      setSelectedBlockForHierarchy(null);
+    } else if (scope === 'Districts') {
+      // Set first district as selected (districts are already loaded)
+      if (districts.length > 0) {
+        updateLocationSelection('Districts', districts[0].name, districts[0].id, districts[0].id, null, null, 'tab_change');
+      }
+      // Fetch blocks for attendance chart
+      fetchBlocks();
+      setDropdownLevel('districts');
+      setSelectedDistrictForHierarchy(null);
+      setSelectedBlockForHierarchy(null);
+    } else if (scope === 'Blocks') {
+      // For blocks, start with districts level
+      fetchBlocks();
+      fetchGramPanchayats();
+      updateLocationSelection('Blocks', 'Select District', null, null, null, null, 'tab_change');
+      setDropdownLevel('districts');
+      setSelectedDistrictForHierarchy(null);
+      setSelectedBlockForHierarchy(null);
+    } else if (scope === 'GPs') {
+      // For GPs, start with districts level
+      fetchBlocks();
+      fetchGramPanchayats();
+      updateLocationSelection('GPs', 'Select District', null, null, null, null, 'tab_change');
+      setDropdownLevel('districts');
+      setSelectedDistrictForHierarchy(null);
+      setSelectedBlockForHierarchy(null);
+    }
+  };
+
+  // Get location options based on current scope and dropdown level
+  const getLocationOptions = () => {
+    if (activeScope === 'Districts') {
+      return districts;
+    } else if (activeScope === 'Blocks') {
+      if (dropdownLevel === 'districts') {
+        return districts;
+      } else if (dropdownLevel === 'blocks') {
+        return blocks.filter(block => block.district_id === selectedDistrictForHierarchy?.id);
+      }
+    } else if (activeScope === 'GPs') {
+      if (dropdownLevel === 'districts') {
+        return districts;
+      } else if (dropdownLevel === 'blocks') {
+        return blocks.filter(block => block.district_id === selectedDistrictForHierarchy?.id);
+      } else if (dropdownLevel === 'gps') {
+        const filteredGPs = gramPanchayats.filter(gp => gp.block_id === selectedBlockForHierarchy?.id);
+        console.log('🔍 Filtering GPs:', {
+          totalGPs: gramPanchayats.length,
+          selectedBlockId: selectedBlockForHierarchy?.id,
+          filteredGPsCount: filteredGPs.length,
+          filteredGPs: filteredGPs
+        });
+        return filteredGPs;
+      }
+    }
+    return [];
+  };
+
+  // Handle hierarchical selection for blocks and GPs
+  const handleHierarchicalSelection = (location) => {
+    if (activeScope === 'Blocks') {
+      if (dropdownLevel === 'districts') {
+        // District selected, now show blocks
+        setSelectedDistrictForHierarchy(location);
+        setDropdownLevel('blocks');
+        setSelectedLocation('Select Block');
+        fetchBlocks();
+      } else if (dropdownLevel === 'blocks') {
+        // Block selected
+        trackDropdownChange(location.name, location.id, selectedDistrictForHierarchy.id);
+        updateLocationSelection('Blocks', location.name, location.id, selectedDistrictForHierarchy.id, location.id, null, 'dropdown_change');
+        console.log('Selected block ID:', location.id, 'Name:', location.name, 'District ID:', selectedDistrictForHierarchy.id);
+        setShowLocationDropdown(false);
+      }
+    } else if (activeScope === 'GPs') {
+      if (dropdownLevel === 'districts') {
+        // District selected, now show blocks
+        setSelectedDistrictForHierarchy(location);
+        setDropdownLevel('blocks');
+        setSelectedLocation('Select Block');
+        fetchBlocks();
+      } else if (dropdownLevel === 'blocks') {
+        // Block selected, now show GPs
+        setSelectedBlockForHierarchy(location);
+        setDropdownLevel('gps');
+        setSelectedLocation('Select GP');
+        fetchGramPanchayats();
+      } else if (dropdownLevel === 'gps') {
+        // GP selected
+        trackDropdownChange(location.name, location.id, selectedBlockForHierarchy.id);
+        updateLocationSelection('GPs', location.name, location.id, selectedDistrictForHierarchy.id, selectedBlockForHierarchy.id, location.id, 'dropdown_change');
+        console.log('Selected GP ID:', location.id, 'Name:', location.name, 'Block ID:', selectedBlockForHierarchy.id, 'District ID:', selectedDistrictForHierarchy.id);
+        setShowLocationDropdown(false);
+      }
+    }
+  };
+
+  // Date range functions
+  const generateYears = () => {
+    const currentYear = new Date().getFullYear();
+    return Array.from({ length: 6 }, (_, i) => currentYear - i);
+  };
+
+  const generateDays = () => {
+    const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
+    return Array.from({ length: daysInMonth }, (_, i) => i + 1);
+  };
+
+  // Get display text based on selected date range
+  const getDateDisplayText = () => {
+    if (isCustomRange && startDate && endDate) {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      return `${start.getDate()}/${start.getMonth() + 1}/${start.getFullYear()} - ${end.getDate()}/${end.getMonth() + 1}/${end.getFullYear()}`;
+    } else if (isCustomRange && startDate) {
+      const start = new Date(startDate);
+      return `${start.getDate()}/${start.getMonth() + 1}/${start.getFullYear()} - Select End Date`;
+    } else {
+      return selectedDateRange;
+    }
+  };
+
+  // Get the current filter type based on what's selected
+  const getCurrentFilterType = () => {
+    if (selectedDay && selectedMonth) {
+      return 'day';
+    } else if (selectedMonth) {
+      return 'month';
+    } else {
+      return 'year';
+    }
+  };
+
+  // Handle year selection
+  const handleYearSelect = (year) => {
+    setSelectedYear(year);
+    setSelectionStep('month');
+    console.log(`Year selected: ${year}`);
+  };
+
+  // Handle month selection
+  const handleMonthSelect = (month) => {
+    setSelectedMonth(month);
+    setSelectionStep('day');
+    console.log(`Month selected: ${months[month - 1].name} ${selectedYear}`);
+  };
+
+  // Handle day selection
+  const handleDaySelect = (day) => {
+    setSelectedDay(day);
+    console.log(`Day selected: ${months[selectedMonth - 1].name} ${day}, ${selectedYear}`);
+  };
+
+  // Skip to next step or finish
+  const handleSkip = () => {
+    if (selectionStep === 'month') {
+      setSelectionStep('day');
+    } else if (selectionStep === 'day') {
+      setShowDateDropdown(false);
+    }
+  };
+
+  // Finish selection
+  const handleFinish = () => {
+    setShowDateDropdown(false);
+    console.log(`Final selection: ${getCurrentFilterType()} - ${getDateDisplayText()}`);
+  };
+
+  // Reset selection
+  const handleReset = () => {
+    setSelectedMonth(null);
+    setSelectedDay(null);
+    setSelectionStep('year');
+  };
+
+  // Toggle date dropdown on click
+  const handleCalendarClick = () => {
+    setShowDateDropdown(!showDateDropdown);
+    if (!showDateDropdown) {
+      setSelectionStep('year');
+    }
+  };
+
+  // Handle predefined date range selection
+  const handleDateRangeSelection = (range) => {
+    if (range.value === 'custom') {
+      setIsCustomRange(true);
+      setSelectedDateRange('Custom');
+      setStartDate(null);
+      setEndDate(null);
+      // Don't close dropdown for custom - let user select dates
+    } else {
+      setIsCustomRange(false);
+      setSelectedDateRange(range.label);
+      
+      const today = new Date();
+      
+      // For "Today" and "Yesterday", both start and end dates should be the same
+      if (range.value === 'today') {
+        // Today: start = today, end = today
+        setStartDate(today.toISOString().split('T')[0]);
+        setEndDate(today.toISOString().split('T')[0]);
+      } else if (range.value === 'yesterday') {
+        // Yesterday: start = yesterday, end = yesterday
+        const yesterday = new Date(today);
+        yesterday.setDate(today.getDate() - 1);
+        setStartDate(yesterday.toISOString().split('T')[0]);
+        setEndDate(yesterday.toISOString().split('T')[0]);
+      } else {
+        // For ranges like "Last 7 Days", "Last 30 Days"
+        // start = today - N days, end = today
+        const start = new Date(today);
+        start.setDate(today.getDate() - range.days);
+        setStartDate(start.toISOString().split('T')[0]);
+        setEndDate(today.toISOString().split('T')[0]);
+      }
+      
+      setShowDateDropdown(false);
+    }
+  };
+
+  // Handle custom date selection
+  const handleCustomDateSelection = (date) => {
+    if (!startDate) {
+      setStartDate(date);
+    } else if (!endDate) {
+      if (new Date(date) >= new Date(startDate)) {
+        setEndDate(date);
+        setShowDateDropdown(false);
+      } else {
+        // If end date is before start date, swap them
+        setEndDate(startDate);
+        setStartDate(date);
+        setShowDateDropdown(false);
+      }
+    }
+  };
+
+  // Validate selected day when month or year changes
+  useEffect(() => {
+    if (selectedMonth && selectedDay) {
+      const daysInSelectedMonth = new Date(selectedYear, selectedMonth, 0).getDate();
+      if (selectedDay > daysInSelectedMonth) {
+        setSelectedDay(daysInSelectedMonth);
+      }
+    }
+  }, [selectedYear, selectedMonth, selectedDay]);
+
+  // Log date changes for debugging
+  useEffect(() => {
+    console.log(`Selected date: ${getCurrentFilterType()} - ${getDateDisplayText()}`);
+  }, [selectedYear, selectedMonth, selectedDay]);
+
+  // Click outside handler
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (!event.target.closest('[data-location-dropdown]') && 
+          !event.target.closest('[data-date-dropdown]')) {
+        setShowLocationDropdown(false);
+        setShowDateDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  // Fetch districts immediately when attendance page loads
+  useEffect(() => {
+    fetchDistricts();
+  }, []);
+
+  // Load additional data based on scope
+  useEffect(() => {
+    if (activeScope === 'Districts' && districts.length === 0) {
+      fetchDistricts();
+    }
+  }, [activeScope, districts.length]);
+
+  // Log current location info whenever it changes
+  useEffect(() => {
+    const locationInfo = getCurrentLocationInfo();
+    console.log('Current Location Info:', locationInfo);
+  }, [activeScope, selectedLocation, selectedLocationId, selectedDistrictId, selectedBlockId, selectedGPId]);
+
+  const attendanceMetrics = [
       {
         title: 'Total Vendor/Supervisor',
         value: '452',
@@ -208,7 +649,7 @@ const AttendanceContent = () => {
             {scopeButtons.map((scope) => (
               <button
                 key={scope}
-                onClick={() => setActiveScope(scope)}
+                onClick={() => handleScopeChange(scope)}
                 style={{
                   padding: '3px 10px',
                   borderRadius: '8px',
@@ -227,29 +668,162 @@ const AttendanceContent = () => {
           </div>
 
           {/* Location dropdown */}
-          <div style={{
-            position: 'relative',
-            minWidth: '200px'
-          }}>
-            <button style={{
-              width: '100%',
-              padding: '5px 12px',
-              border: '1px solid #d1d5db',
-              borderRadius: '10px',
-              backgroundColor: 'white',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              cursor: 'pointer',
-              fontSize: '14px',
-              color: '#6b7280'
-            }}>
+          <div 
+            data-location-dropdown
+            style={{
+              position: 'relative',
+              minWidth: '200px'
+            }}
+          >
+            <button 
+              onClick={() => activeScope !== 'State' && setShowLocationDropdown(!showLocationDropdown)}
+              disabled={activeScope === 'State'}
+              style={{
+                width: '100%',
+                padding: '5px 12px',
+                border: '1px solid #d1d5db',
+                borderRadius: '10px',
+                backgroundColor: activeScope === 'State' ? '#f9fafb' : 'white',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                cursor: activeScope === 'State' ? 'not-allowed' : 'pointer',
+                fontSize: '14px',
+                color: activeScope === 'State' ? '#9ca3af' : '#6b7280',
+                opacity: activeScope === 'State' ? 0.6 : 1
+              }}
+            >
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <MapPin style={{ width: '16px', height: '16px', color: '#9ca3af' }} />
-                <span>Select option</span>
+                <span>{selectedLocation}</span>
               </div>
-              <ChevronDown style={{ width: '16px', height: '16px', color: '#9ca3af' }} />
+              <ChevronDown style={{ 
+                width: '16px', 
+                height: '16px', 
+                color: activeScope === 'State' ? '#d1d5db' : '#9ca3af' 
+              }} />
             </button>
+            
+            {/* Location Dropdown Menu */}
+            {showLocationDropdown && activeScope !== 'State' && (
+              <div 
+                key={`dropdown-${activeScope}`}
+                style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  right: 0,
+                  backgroundColor: 'white',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '8px',
+                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                  zIndex: 1000,
+                  marginTop: '4px',
+                  maxHeight: '200px',
+                  overflowY: 'auto'
+                }}
+              >
+                {/* Breadcrumb/Back button for hierarchical navigation */}
+                {((activeScope === 'Blocks' && dropdownLevel === 'blocks') || 
+                  (activeScope === 'GPs' && (dropdownLevel === 'blocks' || dropdownLevel === 'gps'))) && (
+                  <div style={{
+                    padding: '8px 12px',
+                    borderBottom: '1px solid #f3f4f6',
+                    backgroundColor: '#f9fafb',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    color: '#6b7280',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}
+                  onClick={() => {
+                    if (activeScope === 'Blocks' && dropdownLevel === 'blocks') {
+                      // Go back to districts
+                      setDropdownLevel('districts');
+                      setSelectedDistrictForHierarchy(null);
+                      setSelectedLocation('Select District');
+                    } else if (activeScope === 'GPs' && dropdownLevel === 'blocks') {
+                      // Go back to districts
+                      setDropdownLevel('districts');
+                      setSelectedDistrictForHierarchy(null);
+                      setSelectedLocation('Select District');
+                    } else if (activeScope === 'GPs' && dropdownLevel === 'gps') {
+                      // Go back to blocks
+                      setDropdownLevel('blocks');
+                      setSelectedBlockForHierarchy(null);
+                      setSelectedLocation('Select Block');
+                    }
+                  }}>
+                    <span>←</span>
+                    <span>
+                      {activeScope === 'Blocks' && dropdownLevel === 'blocks' ? 'Back to Districts' :
+                       activeScope === 'GPs' && dropdownLevel === 'blocks' ? 'Back to Districts' :
+                       activeScope === 'GPs' && dropdownLevel === 'gps' ? 'Back to Blocks' : ''}
+                    </span>
+                  </div>
+                )}
+                
+                {/* Level indicator */}
+                {((activeScope === 'Blocks' && dropdownLevel !== 'districts') || 
+                  (activeScope === 'GPs' && dropdownLevel !== 'districts')) && (
+                  <div style={{
+                    padding: '8px 12px',
+                    backgroundColor: '#f3f4f6',
+                    fontSize: '12px',
+                    color: '#6b7280',
+                    fontWeight: '500',
+                    borderBottom: '1px solid #e5e7eb'
+                  }}>
+                    {activeScope === 'Blocks' && dropdownLevel === 'blocks' ? 
+                      `Blocks in ${selectedDistrictForHierarchy?.name}` :
+                     activeScope === 'GPs' && dropdownLevel === 'blocks' ? 
+                      `Blocks in ${selectedDistrictForHierarchy?.name}` :
+                     activeScope === 'GPs' && dropdownLevel === 'gps' ? 
+                      `GPs in ${selectedBlockForHierarchy?.name}` : ''}
+                  </div>
+                )}
+                
+                {(loadingDistricts && activeScope === 'Districts') || (loadingBlocks && activeScope === 'Blocks') || (loadingGPs && activeScope === 'GPs') ? (
+                  <div style={{
+                    padding: '8px 12px',
+                    fontSize: '14px',
+                    color: '#6b7280',
+                    textAlign: 'center'
+                  }}>
+                    Loading {activeScope.toLowerCase()}...
+                  </div>
+                ) : (
+                  getLocationOptions().map((location, index) => (
+                    <div
+                      key={`${activeScope}-${location.id}`}
+                      onClick={() => {
+                        if (activeScope === 'Districts') {
+                          // Direct selection for districts
+                          trackDropdownChange(location.name, location.id, location.id);
+                          updateLocationSelection('Districts', location.name, location.id, location.id, null, null, 'dropdown_change');
+                          console.log('Selected district ID:', location.id, 'Name:', location.name);
+                          setShowLocationDropdown(false);
+                        } else if (activeScope === 'Blocks' || activeScope === 'GPs') {
+                          // Use hierarchical selection for blocks and GPs
+                          handleHierarchicalSelection(location);
+                        }
+                      }}
+                      style={{
+                        padding: '8px 12px',
+                        cursor: 'pointer',
+                        fontSize: '14px',
+                        color: '#374151',
+                        backgroundColor: selectedLocation === location.name ? '#f3f4f6' : 'transparent',
+                        borderBottom: index < getLocationOptions().length - 1 ? '1px solid #f3f4f6' : 'none'
+                      }}
+                    >
+                      {location.name}
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -263,7 +837,7 @@ const AttendanceContent = () => {
           color: '#6B7280',
           fontWeight: '600'
         }}>
-          Rajasthan / All
+          {activeScope === 'State' ? selectedLocation : `Rajasthan / ${selectedLocation}`}
         </span>
       </div>
 
@@ -302,19 +876,245 @@ const AttendanceContent = () => {
               color: '#6b7280',
               margin: 0
             }}>
-              • January 2025
+              • {getDateDisplayText()}
             </span>
           </div>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            color: '#6b7280',
-            fontSize: '14px',
-          }}>
+          <div 
+            onClick={handleCalendarClick}
+            data-date-dropdown
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              color: '#6b7280',
+              fontSize: '14px',
+              padding: '8px 12px',
+              border: '1px solid #d1d5db',
+              borderRadius: '8px',
+              backgroundColor: 'white',
+              cursor: 'pointer',
+              position: 'relative',
+              transition: 'all 0.2s'
+            }}
+          >
             <Calendar style={{ width: '16px', height: '16px' }} />
-            <span>Today</span>
+            <span>{getDateDisplayText()}</span>
             <ChevronDown style={{ width: '16px', height: '16px' }} />
+            
+            {/* Modern Date Range Picker */}
+            {showDateDropdown && (
+              <div 
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  position: 'absolute',
+                  top: '100%',
+                  right: '0',
+                  backgroundColor: 'white',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '12px',
+                  boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)',
+                  zIndex: 1000,
+                  marginTop: '8px',
+                  width: '600px',
+                  maxWidth: '90vw',
+                  display: 'flex',
+                  overflow: 'hidden'
+                }}
+              >
+                {/* Left Sidebar - Predefined Ranges */}
+                <div style={{
+                  width: '200px',
+                  backgroundColor: '#f8fafc',
+                  borderRight: '1px solid #e2e8f0',
+                  padding: '16px 0'
+                }}>
+                  <div style={{ padding: '0 16px 12px', borderBottom: '1px solid #e2e8f0' }}>
+                    <h3 style={{ 
+                      margin: 0, 
+                      fontSize: '14px', 
+                      fontWeight: '600', 
+                      color: '#1e293b' 
+                    }}>
+                      Quick Select
+                    </h3>
+                  </div>
+
+                  {dateRanges.map((range, index) => (
+                    <div
+                      key={range.value}
+                      onClick={() => handleDateRangeSelection(range)}
+                      style={{
+                        padding: '12px 16px',
+                        cursor: 'pointer',
+                        fontSize: '14px',
+                        color: range.value === 'custom' ? '#10b981' : '#475569',
+                        backgroundColor: selectedDateRange === range.label ? '#f0fdf4' : 'transparent',
+                        borderLeft: selectedDateRange === range.label ? '3px solid #10b981' : '3px solid transparent',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      {range.label}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Right Side - Calendar View */}
+                <div style={{
+                  flex: 1,
+                  padding: '16px',
+                  minHeight: '300px'
+                }}>
+                  {isCustomRange ? (
+                    <div>
+                      <h3 style={{ 
+                        margin: '0 0 16px 0', 
+                        fontSize: '14px', 
+                        fontWeight: '600', 
+                        color: '#1e293b' 
+                      }}>
+                        Select Date Range
+                      </h3>
+                      
+                      {/* Custom Date Inputs */}
+                      <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
+                        <div>
+                          <label style={{ 
+                            display: 'block', 
+                            fontSize: '12px', 
+                            color: '#64748b', 
+                            marginBottom: '4px' 
+                          }}>
+                            Start Date
+                          </label>
+                          <input
+                            type="date"
+                            value={startDate || ''}
+                            onChange={(e) => setStartDate(e.target.value)}
+                            style={{
+                              padding: '8px 12px',
+                              border: '1px solid #d1d5db',
+                              borderRadius: '6px',
+                              fontSize: '14px',
+                              width: '140px'
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ 
+                            display: 'block', 
+                            fontSize: '12px',
+                            color: '#64748b', 
+                            marginBottom: '4px' 
+                          }}>
+                            End Date
+                          </label>
+                          <input
+                            type="date"
+                            value={endDate || ''}
+                            onChange={(e) => setEndDate(e.target.value)}
+                            style={{
+                              padding: '8px 12px',
+                              border: '1px solid #d1d5db',
+                              borderRadius: '6px',
+                              fontSize: '14px',
+                              width: '140px'
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Action Buttons */}
+                      <div style={{ 
+                        display: 'flex', 
+                        gap: '8px', 
+                        justifyContent: 'flex-end'
+                      }}>
+                        <button
+                          onClick={() => {
+                            const today = new Date();
+                            const todayStr = today.toISOString().split('T')[0];
+                            setStartDate(todayStr);
+                            setEndDate(todayStr);
+                            setIsCustomRange(false);
+                            setSelectedDateRange('Today');
+                          }}
+                          style={{
+                            padding: '8px 16px',
+                            border: '1px solid #d1d5db',
+                            borderRadius: '6px',
+                            backgroundColor: '#f9fafb',
+                            color: '#6b7280',
+                            fontSize: '14px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Cancel
+                        </button>
+                        
+                        <button
+                          onClick={() => setShowDateDropdown(false)}
+                          disabled={!startDate || !endDate}
+                          style={{
+                            padding: '8px 16px',
+                            backgroundColor: startDate && endDate ? '#10b981' : '#d1d5db',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '6px',
+                            fontSize: '14px',
+                            cursor: startDate && endDate ? 'pointer' : 'not-allowed'
+                          }}
+                        >
+                          Apply
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <h3 style={{ 
+                        margin: '0 0 16px 0', 
+                        fontSize: '14px', 
+                        fontWeight: '600', 
+                        color: '#1e293b' 
+                      }}>
+                        Selected Range
+                      </h3>
+                      
+                      <div style={{
+                        padding: '12px',
+                        backgroundColor: '#f0fdf4',
+                        border: '1px solid #bbf7d0',
+                        borderRadius: '6px',
+                        marginBottom: '16px'
+                      }}>
+                        <div style={{ fontSize: '14px', color: '#166534', fontWeight: '500' }}>
+                          {selectedDateRange}
+                        </div>
+                        {startDate && endDate && (
+                          <div style={{ fontSize: '12px', color: '#16a34a', marginTop: '4px' }}>
+                            {new Date(startDate).toLocaleDateString()} - {new Date(endDate).toLocaleDateString()}
+                          </div>
+                        )}
+                      </div>
+                      
+                      <button
+                        onClick={() => setShowDateDropdown(false)}
+                        style={{
+                          padding: '8px 16px',
+                          backgroundColor: '#10b981',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '6px',
+                          fontSize: '14px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Apply
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
