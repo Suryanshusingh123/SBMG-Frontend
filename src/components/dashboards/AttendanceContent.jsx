@@ -3,21 +3,33 @@ import { MapPin, ChevronDown, Calendar, List, Info, Search, Filter, Download, Ey
 import Chart from 'react-apexcharts';
 import apiClient from '../../services/api';
 
-const SegmentedGauge = ({ percentage, label = "Present" }) => {
+const SegmentedGauge = ({ percentage, label = "Present", absentDays = 0 }) => {
   // Calculate which segments should be filled based on percentage
   const getSegmentColor = (segmentIndex) => {
+    // First segment (0-50%): Green for present
+    // Second segment (50-100%): Red for absent
     const segmentThreshold = (segmentIndex + 1) * 50; // Each segment represents 50%
     
-    if (percentage >= segmentThreshold) {
-      // Fully filled
-      if (segmentIndex === 0) return '#10b981'; // Green
-      if (segmentIndex === 1) return '#ef4444'; // Red
-    } else if (percentage > (segmentIndex * 50)) {
-      // Partially filled - show appropriate color
-      if (segmentIndex === 0) return '#10b981';
-      if (segmentIndex === 1) return '#ef4444';
+    if (segmentIndex === 0) {
+      // First segment: Green for present percentage
+      if (percentage >= segmentThreshold) {
+        return '#10b981'; // Fully green
+      } else if (percentage > 0) {
+        return '#10b981'; // Partially green
+      }
+      return '#f3f4f6'; // Gray (unfilled)
+    } else {
+      // Second segment: Red for absent percentage - only show if there are actual absent days
+      const absentPercentage = 100 - percentage;
+      if (absentDays > 0) {
+        if (absentPercentage >= 50) {
+          return '#ef4444'; // Fully red
+        } else if (absentPercentage > 0) {
+          return '#ef4444'; // Partially red
+        }
+      }
+      return '#f3f4f6'; // Gray (unfilled) - no absent days
     }
-    return '#f3f4f6'; // Gray (unfilled)
   };
 
   // Calculate the arc path for percentage fill with circular ends
@@ -162,6 +174,11 @@ const AttendanceContent = () => {
   const [activeFilter, setActiveFilter] = useState('All');
   const [searchTerm, setSearchTerm] = useState('');
   const [activePerformance, setActivePerformance] = useState('Time');
+
+  // Analytics data state
+  const [analyticsData, setAnalyticsData] = useState(null);
+  const [loadingAnalytics, setLoadingAnalytics] = useState(false);
+  const [analyticsError, setAnalyticsError] = useState(null);
 
   // Date selection state
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -398,6 +415,128 @@ const AttendanceContent = () => {
     }
   };
 
+  // Fetch attendance analytics data from API
+  const fetchAnalyticsData = useCallback(async () => {
+    try {
+      setLoadingAnalytics(true);
+      setAnalyticsError(null);
+
+      console.log('🔄 ===== ATTENDANCE ANALYTICS API CALL =====');
+      console.log('📍 Current State:', {
+        activeScope,
+        selectedLocation,
+        selectedDistrictId,
+        selectedBlockId,
+        selectedGPId,
+        startDate,
+        endDate
+      });
+
+      // Build query parameters based on selected scope
+      const params = new URLSearchParams();
+
+      // Determine level based on active scope
+      let level = 'DISTRICT'; // Default for State scope
+      if (activeScope === 'Districts') {
+        level = 'BLOCK';
+      } else if (activeScope === 'Blocks') {
+        level = 'VILLAGE';
+      } else if (activeScope === 'GPs') {
+        level = 'VILLAGE';
+      }
+      params.append('level', level);
+      console.log('📊 Level:', level);
+
+      // Add geography IDs based on selection
+      if (activeScope === 'Districts' && selectedDistrictId) {
+        params.append('district_id', selectedDistrictId);
+        console.log('🏙️  District ID:', selectedDistrictId);
+      } else if (activeScope === 'Blocks' && selectedBlockId) {
+        params.append('block_id', selectedBlockId);
+        console.log('🏘️  Block ID:', selectedBlockId);
+      } else if (activeScope === 'GPs' && selectedGPId) {
+        params.append('gp_id', selectedGPId);
+        console.log('🏡 GP ID:', selectedGPId);
+      }
+
+      // Add date range if available
+      if (startDate) {
+        params.append('start_date', startDate);
+        console.log('📅 Start Date:', startDate);
+      }
+      if (endDate) {
+        params.append('end_date', endDate);
+        console.log('📅 End Date:', endDate);
+      }
+
+      // Add limit
+      params.append('limit', '500');
+
+      const url = `/attendance/analytics?${params.toString()}`;
+      console.log('🌐 Full API URL:', url);
+      console.log('🔗 Complete URL:', `${apiClient.defaults.baseURL}${url}`);
+      
+      // Check if token exists
+      const token = localStorage.getItem('access_token');
+      console.log('🔑 Token Status:', token ? 'Present' : 'Missing');
+      if (token) {
+        console.log('🔑 Token Preview:', token.substring(0, 20) + '...');
+      }
+      
+      const response = await apiClient.get(url);
+      
+      console.log('✅ Attendance Analytics API Response:', {
+        status: response.status,
+        statusText: response.statusText,
+        data: response.data
+      });
+      
+      console.log('📦 Response Data Structure:', {
+        geo_type: response.data?.geo_type,
+        response_count: response.data?.response?.length,
+        sample_data: response.data?.response?.slice(0, 2)
+      });
+      
+      setAnalyticsData(response.data);
+      
+      // Calculate and log aggregated counts
+      const aggregated = {
+        total_contractors: 0,
+        present_count: 0,
+        absent_count: 0,
+        attendance_rate: 0
+      };
+      
+      response.data?.response?.forEach(item => {
+        aggregated.total_contractors += item.total_contractors || 0;
+        aggregated.present_count += item.present_count || 0;
+        aggregated.absent_count += item.absent_count || 0;
+        aggregated.attendance_rate += item.attendance_rate || 0;
+      });
+      
+      // Calculate average attendance rate
+      if (response.data?.response?.length > 0) {
+        aggregated.attendance_rate = aggregated.attendance_rate / response.data.response.length;
+      }
+      
+      console.log('📈 Aggregated Counts:', aggregated);
+      console.log('🔄 ===== END ATTENDANCE ANALYTICS API CALL =====\n');
+      
+    } catch (error) {
+      console.error('❌ ===== ATTENDANCE ANALYTICS API ERROR =====');
+      console.error('Error Type:', error.name);
+      console.error('Error Message:', error.message);
+      console.error('Error Details:', error.response?.data || error);
+      console.error('Status Code:', error.response?.status);
+      console.error('🔄 ===== END ATTENDANCE ANALYTICS API ERROR =====\n');
+      
+      setAnalyticsError(error.message || 'Failed to fetch analytics data');
+      setAnalyticsData(null);
+    } finally {
+      setLoadingAnalytics(false);
+    }
+  }, [activeScope, selectedLocation, selectedDistrictId, selectedBlockId, selectedGPId, startDate, endDate]);
+
   // Date range functions
   const generateYears = () => {
     const currentYear = new Date().getFullYear();
@@ -588,26 +727,200 @@ const AttendanceContent = () => {
     console.log('Current Location Info:', locationInfo);
   }, [activeScope, selectedLocation, selectedLocationId, selectedDistrictId, selectedBlockId, selectedGPId]);
 
-  const attendanceMetrics = [
+  // Fetch analytics data for overview section when scope, location, or date range changes
+  useEffect(() => {
+    console.log('🔄 Analytics useEffect triggered:', {
+      activeScope,
+      districtsLength: districts.length,
+      selectedDistrictId,
+      selectedBlockId,
+      selectedGPId,
+      startDate,
+      endDate
+    });
+    
+    // For State scope, we can call API immediately (no need to wait for districts)
+    if (activeScope === 'State') {
+      console.log('📡 Calling API for State scope');
+      fetchAnalyticsData();
+      return;
+    }
+    
+    // For other scopes, check if we have the necessary location data loaded
+    if (activeScope === 'Districts' && !selectedDistrictId) {
+      console.log('⏳ Waiting for district selection');
+      return; // Wait for district selection
+    }
+    if (activeScope === 'Blocks' && !selectedBlockId) {
+      console.log('⏳ Waiting for block selection');
+      return; // Wait for block selection
+    }
+    if (activeScope === 'GPs' && !selectedGPId) {
+      console.log('⏳ Waiting for GP selection');
+      return; // Wait for GP selection
+    }
+    
+    console.log('📡 Calling API for other scopes');
+    fetchAnalyticsData();
+  }, [activeScope, selectedLocation, selectedDistrictId, selectedBlockId, selectedGPId, startDate, endDate, districts, blocks, gramPanchayats, fetchAnalyticsData]);
+
+  // Helper function to calculate attendance metrics from API data
+  const calculateAttendanceMetrics = () => {
+    if (!analyticsData?.response) {
+      return {
+        total_contractors: 0,
+        present_count: 0,
+        absent_count: 0,
+        attendance_rate: 0
+      };
+    }
+
+    const metrics = {
+      total_contractors: 0,
+      present_count: 0,
+      absent_count: 0,
+      attendance_rate: 0
+    };
+
+    analyticsData.response.forEach(item => {
+      metrics.total_contractors += item.total_contractors || 0;
+      metrics.present_count += item.present_count || 0;
+      metrics.absent_count += item.absent_count || 0;
+      metrics.attendance_rate += item.attendance_rate || 0;
+    });
+
+    // Calculate average attendance rate
+    if (analyticsData.response.length > 0) {
+      metrics.attendance_rate = metrics.attendance_rate / analyticsData.response.length;
+    }
+
+    return metrics;
+  };
+
+  // Helper function to format numbers
+  const formatNumber = (num) => {
+    return num.toLocaleString();
+  };
+
+  // Helper function to calculate total days in a month minus Sundays
+  const calculateTotalWorkingDays = (date) => {
+    const year = new Date(date).getFullYear();
+    const month = new Date(date).getMonth();
+    
+    // Get the first and last day of the month
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    
+    let totalDays = lastDay.getDate();
+    let sundayCount = 0;
+    
+    // Count Sundays in the month
+    for (let day = 1; day <= totalDays; day++) {
+      const currentDate = new Date(year, month, day);
+      if (currentDate.getDay() === 0) { // Sunday
+        sundayCount++;
+      }
+    }
+    
+    return totalDays - sundayCount;
+  };
+
+  // Helper function to calculate working days for a specific date range
+  const calculateWorkingDaysForRange = (startDate, endDate) => {
+    if (!startDate || !endDate) return 0;
+    
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    
+    // If it's the same day (like "Today" selection)
+    if (startDate === endDate) {
+      // Check if it's a Sunday
+      if (start.getDay() === 0) {
+        return 0; // Sunday, no working days
+      }
+      return 1; // Single working day
+    }
+    
+    // For date ranges, count working days (excluding Sundays)
+    let workingDays = 0;
+    const currentDate = new Date(start);
+    
+    while (currentDate <= end) {
+      if (currentDate.getDay() !== 0) { // Not Sunday
+        workingDays++;
+      }
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+    
+    return workingDays;
+  };
+
+  // Helper function to calculate attendance percentage and working days
+  const calculateAttendancePercentage = () => {
+    if (!analyticsData?.response) {
+      return {
+        presentPercentage: 0,
+        totalWorkingDays: 0,
+        presentDays: 0,
+        absentDays: 0
+      };
+    }
+
+    const metrics = calculateAttendanceMetrics();
+    
+    // Calculate total working days for the selected date range
+    const currentStartDate = startDate || new Date().toISOString().split('T')[0];
+    const currentEndDate = endDate || new Date().toISOString().split('T')[0];
+    const totalWorkingDays = calculateWorkingDaysForRange(currentStartDate, currentEndDate);
+    
+    console.log('📅 Working Days Calculation:', {
+      startDate: currentStartDate,
+      endDate: currentEndDate,
+      totalWorkingDays,
+      presentCount: metrics.present_count,
+      absentCount: metrics.absent_count
+    });
+    
+    // Calculate present percentage
+    const presentPercentage = totalWorkingDays > 0 
+      ? Math.round((metrics.present_count / totalWorkingDays) * 100)
+      : 0;
+
+    return {
+      presentPercentage: Math.min(presentPercentage, 100), // Cap at 100%
+      totalWorkingDays,
+      presentDays: metrics.present_count,
+      absentDays: metrics.absent_count
+    };
+  };
+
+  // Get dynamic attendance metrics from API data
+  const getAttendanceMetrics = () => {
+    const metrics = calculateAttendanceMetrics();
+    
+    return [
       {
         title: 'Total Vendor/Supervisor',
-        value: '452',
+        value: loadingAnalytics ? '...' : formatNumber(metrics.total_contractors),
         icon: List,
         color: '#3b82f6'
       },
       {
         title: 'Vendor/Supervisor Present',
-        value: '400',
+        value: loadingAnalytics ? '...' : formatNumber(metrics.present_count),
         icon: UserCheck,
         color: '#10b981'
       },
       {
         title: 'Vendor/Supervisor Absent',
-        value: '52',
+        value: loadingAnalytics ? '...' : formatNumber(metrics.absent_count),
         icon: UserX,
         color: '#ef4444'
       }
     ];
+  };
+
+  const attendanceMetrics = getAttendanceMetrics();
   
   return (
     <div>
@@ -1171,12 +1484,36 @@ const AttendanceContent = () => {
               <div style={{
                 fontSize: '32px',
                 fontWeight: '700',
-                color: '#111827',
+                color: analyticsError ? '#ef4444' : '#111827',
                 marginTop: '0px',
                 marginLeft: '20px'
               }}>
-                {attendanceMetrics[0].value}
+                {analyticsError ? 'Error' : attendanceMetrics[0].value}
               </div>
+              
+              {/* Loading indicator */}
+              {loadingAnalytics && (
+                <div style={{
+                  fontSize: '12px',
+                  color: '#6b7280',
+                  marginTop: '4px',
+                  marginLeft: '20px'
+                }}>
+                  Loading...
+                </div>
+              )}
+              
+              {/* Error message */}
+              {analyticsError && (
+                <div style={{
+                  fontSize: '12px',
+                  color: '#ef4444',
+                  marginTop: '4px',
+                  marginLeft: '20px'
+                }}>
+                  {analyticsError}
+                </div>
+              )}
             </div>
 
             {/* Present and Absent - In Same Row */}
@@ -1232,11 +1569,35 @@ const AttendanceContent = () => {
                   <div style={{
                     fontSize: '24px',
                     fontWeight: '700',
-                    color: '#111827',
+                    color: analyticsError ? '#ef4444' : '#111827',
                     marginLeft: '20px'
                   }}>
-                    {item.value}
+                    {analyticsError ? 'Error' : item.value}
                   </div>
+                  
+                  {/* Loading indicator */}
+                  {loadingAnalytics && (
+                    <div style={{
+                      fontSize: '12px',
+                      color: '#6b7280',
+                      marginTop: '4px',
+                      marginLeft: '20px'
+                    }}>
+                      Loading...
+                    </div>
+                  )}
+                  
+                  {/* Error message */}
+                  {analyticsError && (
+                    <div style={{
+                      fontSize: '12px',
+                      color: '#ef4444',
+                      marginTop: '4px',
+                      marginLeft: '20px'
+                    }}>
+                      {analyticsError}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -1279,7 +1640,7 @@ const AttendanceContent = () => {
                 fontSize: '14px',
                 color: '#6b7280'
               }}>
-                12, January 2025
+                {getDateDisplayText()}
               </span>
             </div>
 
@@ -1292,7 +1653,18 @@ const AttendanceContent = () => {
 
             {/* Gauge Chart */}
             <div style={{ height: '200px' }}>
-              <SegmentedGauge percentage={82} label="Present" />
+              {(() => {
+                const attendanceData = calculateAttendancePercentage();
+                return (
+                  <div>
+                    <SegmentedGauge 
+                      percentage={loadingAnalytics ? 0 : attendanceData.presentPercentage} 
+                      label={loadingAnalytics ? "Loading..." : "Present"}
+                      absentDays={loadingAnalytics ? 0 : attendanceData.absentDays}
+                    />
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>

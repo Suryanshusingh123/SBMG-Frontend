@@ -1988,13 +1988,22 @@ const ComplaintsContent = () => {
 
         {/* Complaints Table */}
         <div style={{
-          overflowX: 'auto'
+          overflowX: 'auto',
+          maxHeight: '300px',
+          overflowY: 'auto',
+          border: '1px solid #e5e7eb',
+          borderRadius: '8px'
         }}>
           <table style={{
             width: '100%',
             borderCollapse: 'collapse'
           }}>
-            <thead>
+            <thead style={{
+              position: 'sticky',
+              top: 0,
+              backgroundColor: 'white',
+              zIndex: 10
+            }}>
               <tr style={{
                 borderBottom: '2px solid #e5e7eb'
               }}>
@@ -2222,6 +2231,43 @@ const ComplaintsContent = () => {
             </tbody>
           </table>
         </div>
+
+        {/* Scroll Indicator */}
+        {filteredComplaints.length > 0 && (
+          <div style={{
+            padding: '12px 16px',
+            backgroundColor: '#f9fafb',
+            borderTop: '1px solid #e5e7eb',
+            borderRadius: '0 0 8px 8px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            fontSize: '14px',
+            color: '#6b7280'
+          }}>
+            <span>
+              {filteredComplaints.length} complaint{filteredComplaints.length !== 1 ? 's' : ''} total
+            </span>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              fontSize: '12px',
+              color: '#9ca3af'
+            }}>
+              <span>Scroll to see all</span>
+              <div style={{
+                width: '16px',
+                height: '16px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                ↕
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
