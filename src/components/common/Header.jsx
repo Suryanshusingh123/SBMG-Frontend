@@ -1,7 +1,7 @@
 import React from 'react';
 import { Search, Bell, ChevronDown, Menu } from 'lucide-react';
 
-const Header = () => {
+const Header = ({ onMenuClick }) => {
   return (
     <header style={{
       backgroundColor: 'white',
@@ -13,7 +13,7 @@ const Header = () => {
     }}>
       {/* Left side - Menu icon */}
       <div style={{display: 'flex', alignItems: 'center'}}>
-        <button style={{
+        <button onClick={onMenuClick} style={{
           padding: '8px',
           marginLeft: '8px',
           backgroundColor: 'transparent',

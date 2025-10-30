@@ -55,18 +55,18 @@ const SegmentedGauge = ({ complaintData, percentage, label = "Complaints closed"
     };
   };
 
-  // Create segments with gaps like the original design
+  // Create segments with a strict 180° arc and dynamic gaps
   const createSegments = () => {
     const segments = [];
-    const totalAngle = 200; // Total arc angle
-    const gapSize = 19; // degrees - same as original
-    const availableAngle = totalAngle - (3 * gapSize); // Account for 3 gaps between 4 segments
+    const totalAngle = 180; // strict half-circle
+    const gapSize = 20; // degrees between adjacent segments; large enough for rounded caps
+    // availableAngle will be computed dynamically after we know how many segments we have
     
     // Only create segments for statuses that have complaints
     const statuses = [
       { name: 'open', percent: openPercent, color: statusColors.open },
-      { name: 'verified', percent: verifiedPercent, color: statusColors.verified },
       { name: 'resolved', percent: resolvedPercent, color: statusColors.resolved },
+      { name: 'verified', percent: verifiedPercent, color: statusColors.verified },
       { name: 'disposed', percent: disposedPercent, color: statusColors.disposed }
     ].filter(status => status.percent > 0);
     
@@ -78,13 +78,15 @@ const SegmentedGauge = ({ complaintData, percentage, label = "Complaints closed"
     // Calculate total percentage of active statuses
     const totalActivePercent = statuses.reduce((sum, status) => sum + status.percent, 0);
     
-    // Distribute segments proportionally
-    let currentAngle = -90;
-    const segmentCount = Math.min(statuses.length, 3); // Max 3 segments like original
+    // Distribute segments proportionally within 180° minus dynamic gaps
+    let currentAngle = -90; // center the 180° sweep from -90° to +90°
+    const segmentCount = statuses.length; // show all active statuses
+    const gapsCount = Math.max(segmentCount - 1, 0);
+    const availableAngle = totalAngle - (gapsCount * gapSize);
     
     for (let i = 0; i < segmentCount; i++) {
       const status = statuses[i];
-      const segmentAngle = (status.percent / totalActivePercent) * availableAngle;
+      const segmentAngle = totalActivePercent > 0 ? (status.percent / totalActivePercent) * availableAngle : 0;
       const endAngle = currentAngle + segmentAngle;
       
       segments.push({
@@ -94,7 +96,11 @@ const SegmentedGauge = ({ complaintData, percentage, label = "Complaints closed"
         name: status.name
       });
       
-      currentAngle = endAngle + gapSize;
+      if (i < segmentCount - 1) {
+        currentAngle = endAngle + gapSize; // add gap after this segment
+      } else {
+        currentAngle = endAngle; // no gap after the last segment
+      }
     }
     
     // Don't add gray filler - only show actual data segments
@@ -1278,35 +1284,6 @@ const DashboardContent = () => {
         }
       },
       {
-        title: 'Verified complaints',
-        value: loadingAnalytics ? '...' : formatNumber(counts.verified),
-        icon: List,
-        color: '#f97316',
-        trend: 'up',
-        chartData: {
-          series: [{
-            data: [counts.verified * 0.82, counts.verified * 0.89, counts.verified * 0.93, counts.verified]
-          }],
-          options: {
-            chart: {
-              type: 'area',
-              height: 40,
-              sparkline: { enabled: true }
-            },
-            stroke: { curve: 'smooth', width: 2, colors: ['#f97316'] },
-            fill: {
-              type: 'solid',
-              opacity: 0.10,
-              colors: ['#f97316']
-            },
-            tooltip: { enabled: false },
-            grid: { show: false },
-            xaxis: { labels: { show: false } },
-            yaxis: { labels: { show: false } }
-          }
-        }
-      },
-      {
         title: 'Resolved complaints',
         value: loadingAnalytics ? '...' : formatNumber(counts.resolved),
         icon: List,
@@ -1327,6 +1304,35 @@ const DashboardContent = () => {
               type: 'solid',
               opacity: 0.10,
               colors: ['#8b5cf6']
+            },
+            tooltip: { enabled: false },
+            grid: { show: false },
+            xaxis: { labels: { show: false } },
+            yaxis: { labels: { show: false } }
+          }
+        }
+      },
+      {
+        title: 'Verified complaints',
+        value: loadingAnalytics ? '...' : formatNumber(counts.verified),
+        icon: List,
+        color: '#f97316',
+        trend: 'up',
+        chartData: {
+          series: [{
+            data: [counts.verified * 0.82, counts.verified * 0.89, counts.verified * 0.93, counts.verified]
+          }],
+          options: {
+            chart: {
+              type: 'area',
+              height: 40,
+              sparkline: { enabled: true }
+            },
+            stroke: { curve: 'smooth', width: 2, colors: ['#f97316'] },
+            fill: {
+              type: 'solid',
+              opacity: 0.10,
+              colors: ['#f97316']
             },
             tooltip: { enabled: false },
             grid: { show: false },
@@ -1537,6 +1543,23 @@ const DashboardContent = () => {
   };
 
   const chartData = getChartData();
+
+  // Compute a dynamic, "nice" Y-axis max based on data with 10% headroom
+  const getYAxisMax = () => {
+    const allValues = [
+      ...(chartData?.open || []),
+      ...(chartData?.closed || []),
+      ...(chartData?.total || [])
+    ];
+    const baseMax = Math.max(0, ...allValues);
+    if (baseMax === 0) return 10;
+    const padded = Math.ceil(baseMax * 1.1); // add 10% headroom
+    const magnitude = Math.pow(10, Math.floor(Math.log10(padded)));
+    const nice = Math.ceil(padded / magnitude) * magnitude;
+    return nice;
+  };
+
+  const yAxisMax = getYAxisMax();
 
   // Process performance API data and calculate metrics
   const processPerformanceData = () => {
@@ -2803,7 +2826,7 @@ const DashboardContent = () => {
                   text: 'Number of Complaints'
                 },
                 min: 0,
-                max: 150,
+                max: yAxisMax,
                 tickAmount: 5
               },
               fill: {

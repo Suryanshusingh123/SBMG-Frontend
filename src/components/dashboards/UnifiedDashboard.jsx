@@ -153,6 +153,7 @@ const Sidebar = ({ activeItem, setActiveItem }) => {
 
 const UnifiedDashboard = () => {
   const [activeItem, setActiveItem] = useState('Dashboard');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   const renderContent = () => {
     switch (activeItem) {
@@ -192,7 +193,14 @@ const UnifiedDashboard = () => {
       margin: 0,
       padding: 0
     }}>
-      <Sidebar activeItem={activeItem} setActiveItem={setActiveItem} />
+      <div style={{
+        width: isSidebarOpen ? '272px' : '0px',
+        transition: 'width 0.25s ease',
+        overflow: 'hidden',
+        flexShrink: 0
+      }}>
+        <Sidebar activeItem={activeItem} setActiveItem={setActiveItem} />
+      </div>
       <div style={{
         flex: 1,
         backgroundColor: '#F3F4F6',
@@ -202,7 +210,7 @@ const UnifiedDashboard = () => {
         flexDirection: 'column',
         overflow: 'auto'
       }}>
-        <Header />
+        <Header onMenuClick={() => setIsSidebarOpen(prev => !prev)} />
         {renderContent()}
       </div>
     </div>
