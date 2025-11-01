@@ -24,7 +24,7 @@ export const unifiedDashboardConfig = {
     { name: 'Complaints', icon: 'FileText', path: '/complaints' },
     { name: 'Attendance', icon: 'CheckCircle', path: '/attendance' },
     { name: 'Inspection', icon: 'ListChecks', path: '/inspection' },
-    { name: 'Village Master Data', icon: 'Database', path: '/village-master' },
+    { name: 'GP Master Data', icon: 'Database', path: '/village-master' },
     { name: 'Schemes', icon: 'Briefcase', path: '/schemes' },
     { name: 'Events', icon: 'Calendar', path: '/events' },
     { name: 'GPS Tracking', icon: 'Truck', path: '/gps-tracking' },

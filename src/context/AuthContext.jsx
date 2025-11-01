@@ -1,5 +1,23 @@
 import { createContext, useState, useContext, useEffect } from 'react';
 import { authAPI } from '../services/api';
+import { ROLES } from '../utils/roleConfig';
+
+const ENABLED_ROLES = [ROLES.SMD];
+
+const ROLE_MAPPINGS = {
+  admin: ROLES.SMD,
+  vdo: ROLES.VDO,
+  bdo: ROLES.BDO,
+  ceo: ROLES.CEO,
+  worker: ROLES.SUPERVISOR
+};
+
+const clearStoredAuth = () => {
+  localStorage.removeItem('access_token');
+  localStorage.removeItem('user');
+  localStorage.removeItem('userRole');
+  localStorage.removeItem('rememberMe');
+};
 
 const AuthContext = createContext(null);
 
@@ -15,8 +33,12 @@ export const AuthProvider = ({ children }) => {
     const storedRole = localStorage.getItem('userRole');
     
     if (storedToken && storedUser && storedRole) {
-      setUser(JSON.parse(storedUser));
-      setRole(storedRole);
+      if (ENABLED_ROLES.includes(storedRole)) {
+        setUser(JSON.parse(storedUser));
+        setRole(storedRole);
+      } else {
+        clearStoredAuth();
+      }
     }
     setLoading(false);
   }, []);
@@ -34,25 +56,19 @@ export const AuthProvider = ({ children }) => {
       const meResponse = await authAPI.getMe();
       const userData = meResponse.data;
       
-      // Define allowed roles and their mappings
-      const allowedRoles = ['worker', 'vdo', 'admin', 'bdo', 'ceo'];
-      const roleMappings = {
-        'worker': 'supervisor',
-        'vdo': 'vdo', 
-        'admin': 'smd',
-        'bdo': 'bdo',
-        'ceo': 'ceo'
-      };
-      
-      // Check if user role is allowed
-      if (!userData.role || !allowedRoles.includes(userData.role.toLowerCase())) {
-        localStorage.removeItem('access_token');
-        throw new Error('Access denied. Only authorized roles (Worker, VDO, Admin, BDO, CEO) are allowed.');
+      // Map backend roles to internal roles
+      const backendRole = (userData.role || '').toLowerCase();
+      const mappedRole = ROLE_MAPPINGS[backendRole];
+
+      if (!mappedRole) {
+        clearStoredAuth();
+        throw new Error('Access denied. Your role is not recognized.');
       }
-      
-      // Map role to our internal role system
-      const userRole = userData.role.toLowerCase();
-      const mappedRole = roleMappings[userRole];
+
+      if (!ENABLED_ROLES.includes(mappedRole)) {
+        clearStoredAuth();
+        throw new Error('Access denied. Dashboards for your role are not available yet.');
+      }
       
       // Store user data
       setUser(userData);
@@ -67,7 +83,7 @@ export const AuthProvider = ({ children }) => {
         localStorage.removeItem('rememberMe');
       }
       
-      return { success: true };
+      return { success: true, role: mappedRole };
     } catch (error) {
       console.error('Login error:', error);
       
@@ -75,12 +91,15 @@ export const AuthProvider = ({ children }) => {
       if (error.response) {
         // Server responded with error status
         const message = error.response.data?.detail || error.response.data?.message || 'Login failed';
+        clearStoredAuth();
         throw new Error(message);
       } else if (error.request) {
         // Network error
+        clearStoredAuth();
         throw new Error('Network error. Please check your connection.');
       } else {
         // Other error
+        clearStoredAuth();
         throw new Error(error.message || 'Login failed. Please try again.');
       }
     }
@@ -89,10 +108,7 @@ export const AuthProvider = ({ children }) => {
   const logout = () => {
     setUser(null);
     setRole(null);
-    localStorage.removeItem('user');
-    localStorage.removeItem('userRole');
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('rememberMe');
+    clearStoredAuth();
   };
 
   return (

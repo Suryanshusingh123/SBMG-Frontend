@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Calendar, ChevronDown, X, Upload, Search, Download, Info, List } from 'lucide-react';
+import { Plus, Calendar, ChevronDown, X, Upload, Search, Download, Info, List, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
 import apiClient from '../../services/api';
 
 const NotoficationContent = () => {
@@ -11,6 +11,7 @@ const NotoficationContent = () => {
   const [errorReceived, setErrorReceived] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear().toString());
+  const [viewMode, setViewMode] = useState('received');
 
   // Fetch sent notices
   useEffect(() => {
@@ -54,12 +55,22 @@ const NotoficationContent = () => {
     fetchReceivedNotices();
   }, []);
 
+  const noticesSource = viewMode === 'sent' ? sentNotices : receivedNotices;
+
   // Filter notices based on search term
-  const filteredNotices = receivedNotices.filter(notice => 
-    notice.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    notice.sender_info?.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    notice.text?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredNotices = noticesSource.filter(notice => {
+    const haystacks = [
+      notice.title,
+      notice.text,
+      notice.sender_info?.first_name,
+      notice.sender_info?.last_name,
+      notice.recipient_info?.first_name,
+      notice.recipient_info?.last_name
+    ];
+
+    const term = searchTerm.toLowerCase();
+    return haystacks.filter(Boolean).some(value => value.toLowerCase().includes(term));
+  });
 
   // Format date
   const formatDate = (dateString) => {
@@ -83,6 +94,22 @@ const NotoficationContent = () => {
     return parts.join(' ') || 'Unknown';
   };
 
+  const getToggleButtonStyle = (isActive) => ({
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '6px 12px',
+    background: isActive ? '#10b981' : 'transparent',
+    color: isActive ? '#ffffff' : '#374151',
+    border: 'none',
+    fontWeight: 600,
+    fontSize: '14px',
+    cursor: 'pointer',
+    outline: 'none',
+    transition: 'background 0.15s, color 0.15s',
+    borderRadius: '9px'
+  });
+
   return (
         <div style={{ minHeight: '100vh', backgroundColor: '#F3F4F6' }}>
             {/* Header Section */}
@@ -104,6 +131,35 @@ const NotoficationContent = () => {
                     }}>
                         Notices
                     </h1>
+                </div>
+                <div style={{ position: 'relative' }}>
+                <Calendar style={{
+                        position: 'absolute',
+                        right: '12px',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        width: '16px',
+                        height: '16px',
+                        color: '#6b7280',
+                        pointerEvents: 'none'
+                    }} />
+                    <select 
+                        value={selectedYear}
+                        onChange={(e) => setSelectedYear(e.target.value)}
+                        style={{
+                            padding: '8px 40px 8px 12px',
+                            border: '1px solid #d1d5db',
+                            borderRadius: '8px',
+                            fontSize: '14px',
+                            backgroundColor: 'white',
+                            cursor: 'pointer',
+                            outline: 'none',
+                            appearance: 'none'
+                        }}>
+                        <option value="2024">2024</option>
+                        <option value="2025">2025</option>
+                    </select>
+                  
                 </div>
             </div>
 
@@ -137,7 +193,7 @@ const NotoficationContent = () => {
                         color: '#374151',
                         margin: '0 0 8px 0'
                     }}>
-                        Notices sent
+                        Total Notices Sent
                                 </h3>
                     <div style={{
                         fontSize: '32px',
@@ -171,14 +227,13 @@ const NotoficationContent = () => {
                         gap: '8px',
                                 marginBottom: '8px'
                             }}>
-                        <List style={{ width: '16px', height: '16px', color: '#6b7280' }} />
                                 <h3 style={{
                             fontSize: '14px',
                             fontWeight: '500',
                             color: '#374151',
                             margin: 0
                         }}>
-                            Notices Recieved
+                            Total Notices Received
                                 </h3>
                     </div>
                     <div style={{
@@ -187,7 +242,9 @@ const NotoficationContent = () => {
                         color: '#111827',
                         lineHeight: '1'
                     }}>
-                        {loadingReceived ? '...' : errorReceived ? '0' : receivedNotices.length}
+                        {viewMode === 'received'
+                          ? (loadingReceived ? '...' : errorReceived ? '0' : receivedNotices.length)
+                          : (loadingSent ? '...' : errorSent ? '0' : sentNotices.length)}
                     </div>
                 </div>
             </div>
@@ -211,54 +268,55 @@ const NotoficationContent = () => {
                     justifyContent: 'space-between'
                 }}>
                     <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '4px' }}>
                             <h2 style={{
                                 fontSize: '18px',
                                 fontWeight: '600',
                                 color: '#111827',
-                            margin: '0 0 4px 0'
+                                margin: 0
                             }}>
-                            Notices
+                                Notices
                             </h2>
-                                <p style={{
-                                    fontSize: '14px',
-                                    color: '#6b7280',
-                                    margin: 0
-                                }}>
-                            {new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
-                                </p>
-                            </div>
+                         
+                        </div>
+                      
+                    </div>
 
                     <div style={{
                         display: 'flex',
                         alignItems: 'center',
                         gap: '12px'
                     }}>
-                        {/* Search Bar */}
-                        <div style={{ position: 'relative' }}>
-                            <Search style={{
-                                position: 'absolute',
-                                left: '12px',
-                                top: '50%',
-                                transform: 'translateY(-50%)',
-                                width: '16px',
-                                height: '16px',
-                                color: '#9ca3af'
-                            }} />
-                                    <input
-                                        type="text"
-                                placeholder="Search"
-                                        value={searchTerm}
-                                        onChange={(e) => setSearchTerm(e.target.value)}
-                                        style={{
-                                    padding: '8px 12px 8px 40px',
-                                            border: '1px solid #d1d5db',
-                                            borderRadius: '8px',
-                                            fontSize: '14px',
-                                    width: '200px',
-                                            outline: 'none'
-                                        }}
-                                    />
-                                </div>
+                        {/* Toggle between Sent and Received */}
+                        <div style={{
+                            backgroundColor: '#ffffff',
+                            borderRadius: '9px',
+                            display: 'flex',
+                            border: '1px solid #d1d5db',
+                            padding: '2px',
+                            gap: '4px'
+                        }}>
+                            <button
+                                onClick={() => {
+                                    setSearchTerm('');
+                                    setViewMode('sent');
+                                }}
+                                style={getToggleButtonStyle(viewMode === 'sent')}
+                            >
+                                <ArrowUpRight style={{ width: '18px', height: '18px', color: viewMode === 'sent' ? '#ffffff' : '#6b7280' }} />
+                                Sent
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setSearchTerm('');
+                                    setViewMode('received');
+                                }}
+                                style={getToggleButtonStyle(viewMode === 'received' || typeof viewMode === 'undefined')}
+                            >
+                                <ArrowDownLeft style={{ width: '18px', height: '18px', color: (viewMode === 'received' || typeof viewMode === 'undefined') ? '#ffffff' : '#6b7280' }} />
+                                Received
+                            </button>
+                        </div>
 
                         {/* Export Button */}
                         <button style={{
@@ -269,44 +327,15 @@ const NotoficationContent = () => {
                             color: 'white',
                             border: 'none',
                                             borderRadius: '8px',
-                            padding: '8px 16px',
+                            padding: '10px 16px',
                             cursor: 'pointer',
                                             fontSize: '14px',
                             fontWeight: '500'
                         }}>
                             <Download style={{ width: '16px', height: '16px' }} />
-                            Export data
+                       
                         </button>
 
-                        {/* Year Filter */}
-                                        <div style={{ position: 'relative' }}>
-                            <select 
-                                value={selectedYear}
-                                onChange={(e) => setSelectedYear(e.target.value)}
-                                style={{
-                                padding: '8px 40px 8px 12px',
-                                                    border: '1px solid #d1d5db',
-                                                    borderRadius: '8px',
-                                                    fontSize: '14px',
-                                backgroundColor: 'white',
-                                cursor: 'pointer',
-                                outline: 'none',
-                                appearance: 'none'
-                            }}>
-                                <option value="2024">2024</option>
-                                <option value="2025">2025</option>
-                            </select>
-                                            <Calendar style={{
-                                                position: 'absolute',
-                                                right: '12px',
-                                                top: '50%',
-                                                transform: 'translateY(-50%)',
-                                                width: '16px',
-                                                height: '16px',
-                                                color: '#6b7280',
-                                                pointerEvents: 'none'
-                                            }} />
-                                        </div>
                                     </div>
                                 </div>
 
@@ -329,7 +358,7 @@ const NotoficationContent = () => {
                                     color: '#374151'
                                 }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                        Date
+                                        Notice ID
                                         <ChevronDown style={{ width: '14px', height: '14px', color: '#9ca3af' }} />
                                     </div>
                                 </th>
@@ -341,7 +370,7 @@ const NotoficationContent = () => {
                                     color: '#374151'
                                 }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                        From
+                                        Date
                                         <ChevronDown style={{ width: '14px', height: '14px', color: '#9ca3af' }} />
                             </div>
                                 </th>
@@ -353,7 +382,7 @@ const NotoficationContent = () => {
                                     color: '#374151'
                                 }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                        Title
+                                        Assigned To
                                         <ChevronDown style={{ width: '14px', height: '14px', color: '#9ca3af' }} />
                         </div>
                                 </th>
@@ -377,23 +406,35 @@ const NotoficationContent = () => {
                                     color: '#374151'
                                 }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                        Location
+                                        Subject
+                                        <ChevronDown style={{ width: '14px', height: '14px', color: '#9ca3af' }} />
+                        </div>
+                                </th>
+                                <th style={{
+                                    padding: '12px 24px',
+                                    textAlign: 'left',
+                                    fontSize: '14px',
+                                    fontWeight: '600',
+                                    color: '#374151'
+                                }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                        Status
                                         <ChevronDown style={{ width: '14px', height: '14px', color: '#9ca3af' }} />
                         </div>
                                 </th>
                             </tr>
                         </thead>
                         <tbody>
-                            {loadingReceived ? (
+                            {(viewMode === 'received' ? loadingReceived : loadingSent) ? (
                                 <tr>
                                     <td colSpan={5} style={{ padding: '40px', textAlign: 'center', color: '#6b7280' }}>
                                         Loading notices...
                                     </td>
                                 </tr>
-                            ) : errorReceived ? (
+                            ) : (viewMode === 'received' ? errorReceived : errorSent) ? (
                                 <tr>
                                     <td colSpan={5} style={{ padding: '40px', textAlign: 'center', color: '#ef4444' }}>
-                                        {errorReceived}
+                                        {viewMode === 'received' ? errorReceived : errorSent}
                                     </td>
                                 </tr>
                             ) : filteredNotices.length === 0 ? (
@@ -413,7 +454,7 @@ const NotoficationContent = () => {
                                             fontSize: '14px',
                                             color: '#374151'
                                         }}>
-                                            {formatDate(notice.date)}
+                                            {notice.notice_id || 'N/A'}
                                         </td>
                                         <td style={{
                                             padding: '16px 24px',
@@ -421,35 +462,43 @@ const NotoficationContent = () => {
                                             color: '#374151'
                                         }}>
                                             <div>
-                                                <div style={{ fontWeight: '500' }}>{getSenderName(notice.sender_info)}</div>
-                                                <div style={{ fontSize: '12px', color: '#6b7280' }}>{notice.sender_info?.role_name || 'N/A'}</div>
-                    </div>
+                                                <div style={{ fontWeight: '500' }}>
+                                                  {viewMode === 'received'
+                                                    ? getSenderName(notice.sender_info)
+                                                    : getSenderName(notice.recipient_info)}
+                                                </div>
+                                                <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                                                  {viewMode === 'received'
+                                                    ? notice.sender_info?.role_name || 'N/A'
+                                                    : notice.recipient_info?.role_name || 'N/A'}
+                                                </div>
+                                            </div>
                                         </td>
                                         <td style={{
                                             padding: '16px 24px',
                                             fontSize: '14px',
                                             color: '#374151'
                                         }}>
-                                            {notice.title || 'N/A'}
+                                            {notice.subject || 'N/A'}
                                         </td>
                                         <td style={{
                                             padding: '16px 24px',
                                             fontSize: '14px',
                                             color: '#374151'
                                         }}>
-                                            Notice
+                                                {notice.status || 'Pending'}
                                         </td>
                                         <td style={{
                                             padding: '16px 24px',
                                             fontSize: '14px',
                                             color: '#374151'
                                         }}>
-                                            {notice.sender_info?.district_name && (
+                                            {(viewMode === 'received' ? notice.sender_info?.district_name : notice.recipient_info?.district_name) && (
                                                 <div>
-                                                    <div>{notice.sender_info.district_name}</div>
-                                                    {notice.sender_info.block_name && (
+                                                    <div>{viewMode === 'received' ? notice.sender_info?.district_name : notice.recipient_info?.district_name}</div>
+                                                    {(viewMode === 'received' ? notice.sender_info?.block_name : notice.recipient_info?.block_name) && (
                                                         <div style={{ fontSize: '12px', color: '#6b7280' }}>
-                                                            {notice.sender_info.block_name}
+                                                            {viewMode === 'received' ? notice.sender_info?.block_name : notice.recipient_info?.block_name}
                                                         </div>
                                                     )}
                                                 </div>

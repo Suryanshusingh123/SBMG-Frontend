@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { MapPin, ChevronDown, Calendar, List, Info, Search, Filter, Download, Eye, Edit, Trash2, CheckCircle, XCircle, Clock, Users, UserCheck, UserX } from 'lucide-react';
+import { MapPin, ChevronDown, ChevronRight, Calendar, List, Info, Search, Filter, Download, Eye, Edit, Trash2, CheckCircle, XCircle, Clock, Users, UserCheck, UserX } from 'lucide-react';
 import Chart from 'react-apexcharts';
 import number1 from '../../assets/images/number1.png';
 import number2 from '../../assets/images/nnumber2.png';
@@ -117,33 +117,58 @@ const InspectionContent = () => {
     }
   };
 
-  // Fetch blocks from API
-  const fetchBlocks = async () => {
+  // Fetch blocks for a specific district
+  const fetchBlocks = useCallback(async (districtId) => {
+    if (!districtId) {
+      setBlocks([]);
+      return;
+    }
+
     try {
       setLoadingBlocks(true);
-      const response = await apiClient.get('/geography/blocks?skip=0&limit=100');
+      const response = await apiClient.get('/geography/blocks', {
+        params: {
+          district_id: districtId,
+          skip: 0,
+          limit: 100
+        }
+      });
       console.log('Blocks API Response:', response.data);
       setBlocks(response.data);
     } catch (error) {
       console.error('Error fetching blocks:', error);
+      setBlocks([]);
     } finally {
       setLoadingBlocks(false);
     }
-  };
+  }, []);
 
-  // Fetch gram panchayats from API
-  const fetchGramPanchayats = async () => {
+  // Fetch gram panchayats for a specific district & block
+  const fetchGramPanchayats = useCallback(async (districtId, blockId) => {
+    if (!districtId || !blockId) {
+      setGramPanchayats([]);
+      return;
+    }
+
     try {
       setLoadingGPs(true);
-      const response = await apiClient.get('/geography/grampanchayats?skip=0&limit=100');
+      const response = await apiClient.get('/geography/grampanchayats', {
+        params: {
+          district_id: districtId,
+          block_id: blockId,
+          skip: 0,
+          limit: 100
+        }
+      });
       console.log('GPs API Response:', response.data);
       setGramPanchayats(response.data);
     } catch (error) {
       console.error('Error fetching gram panchayats:', error);
+      setGramPanchayats([]);
     } finally {
       setLoadingGPs(false);
     }
-  };
+  }, []);
 
   // Effect to fetch initial data
   useEffect(() => {
@@ -157,17 +182,26 @@ const InspectionContent = () => {
 
   // Effect to fetch data when scope changes
   useEffect(() => {
-    if (activeScope === 'Districts') {
+    if (activeScope === 'Districts' || activeScope === 'Blocks' || activeScope === 'GPs') {
       fetchDistricts();
-    } else if (activeScope === 'Blocks') {
-      fetchDistricts();
-      fetchBlocks();
-    } else if (activeScope === 'GPs') {
-      fetchDistricts();
-      fetchBlocks();
-      fetchGramPanchayats();
+      if (activeScope !== 'Districts') {
+        setBlocks([]);
+        setGramPanchayats([]);
+      }
     }
   }, [activeScope]);
+
+  useEffect(() => {
+    if ((activeScope === 'Districts' || activeScope === 'Blocks' || activeScope === 'GPs') && selectedDistrictId) {
+      fetchBlocks(selectedDistrictId);
+    }
+  }, [activeScope, selectedDistrictId, fetchBlocks]);
+
+  useEffect(() => {
+    if ((activeScope === 'Blocks' || activeScope === 'GPs') && selectedDistrictId && selectedBlockId) {
+      fetchGramPanchayats(selectedDistrictId, selectedBlockId);
+    }
+  }, [activeScope, selectedDistrictId, selectedBlockId, fetchGramPanchayats]);
 
   // Helper functions
   const getLocationOptions = () => {
@@ -191,39 +225,154 @@ const InspectionContent = () => {
     return [];
   };
 
-  const handleHierarchicalSelection = (location) => {
-    if (activeScope === 'Blocks') {
-      if (dropdownLevel === 'districts') {
-        setSelectedDistrictForHierarchy(location);
+  const activeHierarchyDistrict = selectedDistrictForHierarchy ||
+    (selectedDistrictId ? districts.find(d => d.id === selectedDistrictId) : null);
+
+  const blocksForActiveDistrict = activeHierarchyDistrict
+    ? blocks.filter(block => block.district_id === activeHierarchyDistrict.id)
+    : [];
+
+  const activeHierarchyBlock = selectedBlockForHierarchy ||
+    (selectedBlockId ? blocks.find(block => block.id === selectedBlockId) : null);
+
+  const gpsForActiveBlock = activeHierarchyBlock
+    ? gramPanchayats.filter(gp => gp.block_id === activeHierarchyBlock.id)
+    : [];
+
+  const getMenuItemStyles = (isActive) => ({
+    padding: '8px 12px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    color: isActive ? '#047857' : '#374151',
+    backgroundColor: isActive ? '#ecfdf5' : 'transparent',
+    fontWeight: isActive ? 600 : 400,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    transition: 'background-color 0.15s ease, color 0.15s ease'
+  });
+
+  const handleDistrictHover = (district) => {
+    if (activeScope === 'Blocks' || activeScope === 'GPs') {
+      if (!selectedDistrictForHierarchy || selectedDistrictForHierarchy.id !== district.id) {
+        setSelectedDistrictForHierarchy(district);
+        setSelectedBlockForHierarchy(null);
         setDropdownLevel('blocks');
-        setSelectedLocation('Select Block');
-        fetchBlocks();
-      } else if (dropdownLevel === 'blocks') {
-        setSelectedDistrictId(selectedDistrictForHierarchy.id);
-        setSelectedBlockId(location.id);
-        setSelectedLocation(location.name);
-        setShowLocationDropdown(false);
-      }
-    } else if (activeScope === 'GPs') {
-      if (dropdownLevel === 'districts') {
-        setSelectedDistrictForHierarchy(location);
-        setDropdownLevel('blocks');
-        setSelectedLocation('Select Block');
-        fetchBlocks();
-      } else if (dropdownLevel === 'blocks') {
-        setSelectedBlockForHierarchy(location);
-        setDropdownLevel('gps');
-        setSelectedLocation('Select GP');
-        fetchGramPanchayats();
-      } else if (dropdownLevel === 'gps') {
-        setSelectedDistrictId(selectedDistrictForHierarchy.id);
-        setSelectedBlockId(selectedBlockForHierarchy.id);
-        setSelectedGPId(location.id);
-        setSelectedLocation(location.name);
-        setShowLocationDropdown(false);
+        fetchBlocks(district.id);
       }
     }
   };
+
+  const handleDistrictClick = (district) => {
+    if (activeScope === 'Districts') {
+      setSelectedDistrictId(district.id);
+      setSelectedLocation(district.name);
+      setSelectedLocationId(district.id);
+      fetchBlocks(district.id);
+      setShowLocationDropdown(false);
+    } else if (activeScope === 'Blocks') {
+      setSelectedDistrictForHierarchy(district);
+      setSelectedBlockForHierarchy(null);
+      setSelectedLocation('Select Block');
+      setDropdownLevel('blocks');
+      fetchBlocks(district.id);
+    } else if (activeScope === 'GPs') {
+      setSelectedDistrictForHierarchy(district);
+      setSelectedBlockForHierarchy(null);
+      setSelectedLocation('Select Block');
+      setDropdownLevel('blocks');
+      fetchBlocks(district.id);
+    }
+  };
+
+  const handleBlockHover = (block) => {
+    if (activeScope === 'GPs') {
+      if (!selectedBlockForHierarchy || selectedBlockForHierarchy.id !== block.id) {
+        setSelectedBlockForHierarchy(block);
+        setDropdownLevel('gps');
+        fetchGramPanchayats(selectedDistrictForHierarchy?.id || selectedDistrictId, block.id);
+      }
+    }
+  };
+
+  const handleBlockClick = (block) => {
+    if (activeScope === 'Blocks') {
+      const district = districts.find(d => d.id === (block.district_id || selectedDistrictForHierarchy?.id)) || selectedDistrictForHierarchy;
+      if (district) {
+        setSelectedDistrictId(district.id);
+        setSelectedDistrictForHierarchy(district);
+      }
+      setSelectedBlockId(block.id);
+      setSelectedBlockForHierarchy(block);
+      setSelectedLocation(block.name);
+      fetchGramPanchayats(district?.id, block.id);
+      setShowLocationDropdown(false);
+    } else if (activeScope === 'GPs') {
+      setSelectedBlockForHierarchy(block);
+      setSelectedLocation('Select GP');
+      setDropdownLevel('gps');
+      fetchGramPanchayats(selectedDistrictForHierarchy?.id || selectedDistrictId, block.id);
+    }
+  };
+
+  const handleGPClick = (gp) => {
+    const block = blocks.find(b => b.id === (gp.block_id || selectedBlockForHierarchy?.id || selectedBlockId)) || selectedBlockForHierarchy;
+    const district = districts.find(d => d.id === (block?.district_id || selectedDistrictForHierarchy?.id || selectedDistrictId)) || selectedDistrictForHierarchy;
+
+    if (district) {
+      setSelectedDistrictId(district.id);
+      setSelectedDistrictForHierarchy(district);
+    }
+    if (block) {
+      setSelectedBlockId(block.id);
+      setSelectedBlockForHierarchy(block);
+    }
+
+    setSelectedGPId(gp.id);
+    setSelectedLocation(gp.name);
+    fetchGramPanchayats(district?.id, block?.id || gp.block_id);
+    setShowLocationDropdown(false);
+  };
+
+  useEffect(() => {
+    if (!showLocationDropdown) {
+      return;
+    }
+
+    if ((activeScope === 'Blocks' || activeScope === 'GPs') && districts.length > 0) {
+      if (!selectedDistrictForHierarchy) {
+        const presetDistrict = (selectedDistrictId && districts.find(d => d.id === selectedDistrictId)) || districts[0];
+        if (presetDistrict) {
+          setSelectedDistrictForHierarchy(presetDistrict);
+          setDropdownLevel(activeScope === 'GPs' && selectedBlockId ? 'gps' : 'blocks');
+          fetchBlocks(presetDistrict.id);
+        }
+      }
+    }
+
+    if (activeScope === 'GPs' && selectedDistrictForHierarchy && blocks.length > 0) {
+      if (!selectedBlockForHierarchy) {
+        const presetBlock = (selectedBlockId && blocks.find(b => b.id === selectedBlockId && b.district_id === selectedDistrictForHierarchy.id))
+          || blocks.find(b => b.district_id === selectedDistrictForHierarchy.id);
+        if (presetBlock) {
+          setSelectedBlockForHierarchy(presetBlock);
+          setDropdownLevel('gps');
+          fetchGramPanchayats(selectedDistrictForHierarchy.id, presetBlock.id);
+        }
+      }
+    }
+  }, [
+    showLocationDropdown,
+    activeScope,
+    districts,
+    blocks,
+    selectedDistrictForHierarchy,
+    selectedBlockForHierarchy,
+    selectedDistrictId,
+    selectedBlockId,
+    fetchBlocks,
+    fetchGramPanchayats
+  ]);
 
   // Date helper functions
   const getDateDisplayText = () => {
@@ -465,7 +614,7 @@ const InspectionContent = () => {
         apiLevel = 'VILLAGE';
       }
 
-      const url = `/inspectionstop-performers?level=${apiLevel}`;
+      const url = `/inspections/top-performers?level=${apiLevel}`;
       console.log('🌐 Full API URL:', url);
       console.log('🔗 Complete URL:', `${apiClient.defaults.baseURL}${url}`);
       
@@ -903,89 +1052,141 @@ const InspectionContent = () => {
             
             {/* Location Dropdown Menu */}
             {showLocationDropdown && activeScope !== 'State' && (
-              <div style={{
-                position: 'absolute',
-                top: '100%',
-                left: 0,
-                right: 0,
-                backgroundColor: 'white',
-                border: '1px solid #d1d5db',
-                borderRadius: '8px',
-                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-                zIndex: 1000,
-                marginTop: '4px',
-                maxHeight: '200px',
-                overflowY: 'auto'
-              }}>
-                {/* Breadcrumb/Back button */}
-                {((activeScope === 'Blocks' && dropdownLevel === 'blocks') || 
-                  (activeScope === 'GPs' && (dropdownLevel === 'blocks' || dropdownLevel === 'gps'))) && (
-                  <div style={{
-                    padding: '8px 12px',
-                    borderBottom: '1px solid #f3f4f6',
-                    backgroundColor: '#f9fafb',
-                    cursor: 'pointer',
-                    fontSize: '14px',
-                    color: '#6b7280',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px'
+              <div
+                key={`dropdown-${activeScope}`}
+                style={{
+                  position: 'absolute',
+                  top: '100%',
+                  right: 0,
+                  left: 'auto',
+                  backgroundColor: 'white',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '10px',
+                  boxShadow: '0 12px 24px rgba(15, 23, 42, 0.12)',
+                  zIndex: 1000,
+                  marginTop: '6px',
+                  display: 'flex',
+                  overflow: 'hidden',
+                  minWidth: activeScope === 'Districts' ? '280px' : activeScope === 'Blocks' ? '520px' : '780px'
+                }}
+              >
+                <div
+                  style={{
+                    minWidth: '240px',
+                    maxHeight: '280px',
+                    overflowY: 'auto',
+                    borderRight: activeScope !== 'Districts' ? '1px solid #f3f4f6' : 'none'
                   }}
-                  onClick={() => {
-                    if (activeScope === 'Blocks' && dropdownLevel === 'blocks') {
-                      setDropdownLevel('districts');
-                      setSelectedDistrictForHierarchy(null);
-                      setSelectedLocation('Select District');
-                    } else if (activeScope === 'GPs' && dropdownLevel === 'blocks') {
-                      setDropdownLevel('districts');
-                      setSelectedDistrictForHierarchy(null);
-                      setSelectedLocation('Select District');
-                    } else if (activeScope === 'GPs' && dropdownLevel === 'gps') {
-                      setDropdownLevel('blocks');
-                      setSelectedBlockForHierarchy(null);
-                      setSelectedLocation('Select Block');
-                    }
-                  }}>
-                    <span>←</span>
-                    <span>Back to {dropdownLevel === 'gps' ? 'Blocks' : 'Districts'}</span>
+                >
+                  {loadingDistricts ? (
+                    <div style={{ padding: '12px 16px', fontSize: '13px', color: '#6b7280' }}>
+                      Loading districts...
+                    </div>
+                  ) : districts.length === 0 ? (
+                    <div style={{ padding: '12px 16px', fontSize: '13px', color: '#6b7280' }}>
+                      No districts available
+                    </div>
+                  ) : (
+                    districts.map((district) => {
+                      const isActiveDistrict = activeHierarchyDistrict?.id === district.id;
+                      const isSelectedDistrict = activeScope === 'Districts' && selectedLocation === district.name;
+                      const showArrow = activeScope === 'Blocks' || activeScope === 'GPs';
+                      return (
+                        <div
+                          key={`district-${district.id}`}
+                          onClick={() => handleDistrictClick(district)}
+                          onMouseEnter={() => handleDistrictHover(district)}
+                          style={getMenuItemStyles(isActiveDistrict || isSelectedDistrict)}
+                        >
+                          <span>{district.name}</span>
+                          {showArrow && (
+                            <ChevronRight style={{ width: '14px', height: '14px', color: '#9ca3af' }} />
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                {activeScope !== 'Districts' && (
+                  <div
+                    style={{
+                      minWidth: '240px',
+                      maxHeight: '280px',
+                      overflowY: 'auto',
+                      borderRight: activeScope === 'GPs' ? '1px solid #f3f4f6' : 'none'
+                    }}
+                  >
+                    {loadingBlocks ? (
+                      <div style={{ padding: '12px 16px', fontSize: '13px', color: '#6b7280' }}>
+                        Loading blocks...
+                      </div>
+                    ) : !activeHierarchyDistrict ? (
+                      <div style={{ padding: '12px 16px', fontSize: '13px', color: '#6b7280' }}>
+                        Select a district to view blocks
+                      </div>
+                    ) : blocksForActiveDistrict.length === 0 ? (
+                      <div style={{ padding: '12px 16px', fontSize: '13px', color: '#6b7280' }}>
+                        No blocks found
+                      </div>
+                    ) : (
+                      blocksForActiveDistrict.map((block) => {
+                        const isActiveBlock = activeHierarchyBlock?.id === block.id;
+                        const isSelectedBlock = activeScope === 'Blocks' && selectedLocation === block.name;
+                        const showArrow = activeScope === 'GPs';
+                        return (
+                          <div
+                            key={`block-${block.id}`}
+                            onClick={() => handleBlockClick(block)}
+                            onMouseEnter={() => handleBlockHover(block)}
+                            style={getMenuItemStyles(isActiveBlock || isSelectedBlock)}
+                          >
+                            <span>{block.name}</span>
+                            {showArrow && (
+                              <ChevronRight style={{ width: '14px', height: '14px', color: '#9ca3af' }} />
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
                   </div>
                 )}
-                
-                {/* Loading state */}
-                {(loadingDistricts && activeScope === 'Districts') || (loadingBlocks && activeScope === 'Blocks') || (loadingGPs && activeScope === 'GPs') ? (
-                  <div style={{
-                    padding: '8px 12px',
-                    fontSize: '14px',
-                    color: '#6b7280',
-                    textAlign: 'center'
-                  }}>
-                    Loading {activeScope.toLowerCase()}...
+
+                {activeScope === 'GPs' && (
+                  <div
+                    style={{
+                      minWidth: '240px',
+                      maxHeight: '280px',
+                      overflowY: 'auto'
+                    }}
+                  >
+                    {loadingGPs ? (
+                      <div style={{ padding: '12px 16px', fontSize: '13px', color: '#6b7280' }}>
+                        Loading GPs...
+                      </div>
+                    ) : !activeHierarchyBlock ? (
+                      <div style={{ padding: '12px 16px', fontSize: '13px', color: '#6b7280' }}>
+                        Select a block to view GPs
+                      </div>
+                    ) : gpsForActiveBlock.length === 0 ? (
+                      <div style={{ padding: '12px 16px', fontSize: '13px', color: '#6b7280' }}>
+                        No GPs found
+                      </div>
+                    ) : (
+                      gpsForActiveBlock.map((gp) => {
+                        const isSelectedGP = activeScope === 'GPs' && selectedLocation === gp.name;
+                        return (
+                          <div
+                            key={`gp-${gp.id}`}
+                            onClick={() => handleGPClick(gp)}
+                            style={getMenuItemStyles(isSelectedGP)}
+                          >
+                            <span>{gp.name}</span>
+                          </div>
+                        );
+                      })
+                    )}
                   </div>
-                ) : (
-                  getLocationOptions().map((location, index) => (
-                    <div
-                      key={`${activeScope}-${location.id}`}
-                      onClick={() => {
-                        if (activeScope === 'Districts') {
-                          setSelectedDistrictId(location.id);
-                          setSelectedLocation(location.name);
-                          setShowLocationDropdown(false);
-                        } else {
-                          handleHierarchicalSelection(location);
-                        }
-                      }}
-                      style={{
-                        padding: '8px 12px',
-                        cursor: 'pointer',
-                        fontSize: '14px',
-                        color: '#374151',
-                        backgroundColor: selectedLocation === location.name ? '#f3f4f6' : 'transparent',
-                        borderBottom: index < getLocationOptions().length - 1 ? '1px solid #f3f4f6' : 'none'
-                      }}
-                    >
-                      {location.name}
-                    </div>
-                  ))
                 )}
               </div>
             )}

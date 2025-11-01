@@ -5,7 +5,7 @@ import { ROLES } from '../utils/roleConfig';
 import { Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import backgroundImage from '../assets/images/background.png';
 import swachLogo from '../assets/logos/swach.png';
-import groupLogo from '../assets/logos/Group.png';
+import groupLogo from '../assets/logos/Group-.png';
 
 const Login = () => {
   const [username, setUsername] = useState('');
@@ -30,10 +30,15 @@ const Login = () => {
 
     try {
       // Call the login API
-      await login(username, password, rememberMe);
-      
-      // Navigate to unified dashboard for all roles
-      navigate('/dashboard');
+      const result = await login(username, password, rememberMe);
+
+      if (result?.role === ROLES.SMD) {
+        navigate('/dashboard');
+      } else if (result?.role) {
+        navigate(`/dashboard/${result.role}`);
+      } else {
+        navigate('/dashboard');
+      }
     } catch (error) {
       console.error('Login error:', error);
       setError(error.message || 'Login failed. Please check your credentials.');
@@ -52,7 +57,8 @@ const Login = () => {
           left: 0,
           width: '100vw',
           height: '100vh',
-          backgroundImage: `url(${backgroundImage})`,
+          backgroundImage: `linear-gradient(to bottom, rgba(255, 255, 255, 0.98) 0%, rgba(255, 255, 255, 0.85) 10%, rgba(255, 255, 255, 0.65) 15%, rgba(255, 255, 255, 0.25) 70%, rgba(255, 255, 255, 0) 100%), url(${backgroundImage})`,
+          backgroundBlendMode: 'normal',
           backgroundSize: 'cover',
           backgroundPosition: 'center',
           backgroundRepeat: 'no-repeat',
@@ -63,30 +69,21 @@ const Login = () => {
         }}
       ></div>
 
-      {/* White container at top */}
-      <div 
+      {/* Government of India Emblem overlay */}
+      <div
         style={{
           position: 'absolute',
-          top: 0,
-          left: 0,
-          width: '100vw',
-          height: '70px',
-          zIndex: 9999,
-          backgroundColor: 'white',
-          background: 'white',
-          margin: 0,
-          padding: 0,
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center'
+          top: '20px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 1000
         }}
       >
-        {/* Government of India Emblem */}
         <img
           src={groupLogo}
           alt="Government of India"
           style={{
-            height: '40px',
+            height: '48px',
             width: 'auto',
             objectFit: 'contain'
           }}
@@ -118,7 +115,7 @@ const Login = () => {
         }}
       >
         {/* Swachh Rajasthan Logo */}
-        <div style={{ marginBottom: '8px' }}>
+        <div style={{ marginBottom: '16px' }}>
           <img
             src={swachLogo}
             alt="Swachh Rajasthan"
@@ -145,7 +142,7 @@ const Login = () => {
             color: '#6B7280', 
             margin: 0 
           }}>
-            For authorized personnel only — Worker, VDO, Admin, BDO, CEO access.
+            Restricted access — only SMD role is enabled right now.
           </p>
         </div>
 

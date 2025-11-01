@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Calendar, ChevronDown, X, Upload, Loader2, Edit } from 'lucide-react';
+import { Plus, Calendar, ChevronDown, X, Upload, Loader2, Edit, Trash2 } from 'lucide-react';
 import { schemesAPI } from '../../services/api';
 
 const SchemesContent = () => {
@@ -32,6 +32,7 @@ const SchemesContent = () => {
         active: true
     });
     const [isUpdating, setIsUpdating] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
 
     // Fetch schemes data on component mount
     useEffect(() => {
@@ -154,6 +155,27 @@ const SchemesContent = () => {
             active: scheme.active !== undefined ? scheme.active : true
         });
         setShowEditModal(true);
+    };
+
+    const handleDeleteScheme = async (schemeId) => {
+        if (!schemeId || isDeleting) return;
+        const confirmDelete = window.confirm('Are you sure you want to delete this scheme? This action cannot be undone.');
+        if (!confirmDelete) {
+            return;
+        }
+
+        try {
+            setIsDeleting(true);
+            await schemesAPI.deleteScheme(schemeId);
+            setShowDetailsModal(false);
+            setSelectedScheme(null);
+            await fetchSchemes();
+        } catch (error) {
+            console.error('Error deleting scheme:', error);
+            alert('Failed to delete scheme. Please try again.');
+        } finally {
+            setIsDeleting(false);
+        }
     };
 
     // Handle scheme update
@@ -860,6 +882,31 @@ const SchemesContent = () => {
                   >
                     <Edit style={{ width: '16px', height: '16px' }} />
                     Edit Scheme
+                  </button>
+                  <button
+                    onClick={() => handleDeleteScheme(selectedScheme?.id)}
+                    disabled={isDeleting}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '6px 12px',
+                      border: '1px solid #ef4444',
+                      borderRadius: '6px',
+                      backgroundColor: isDeleting ? '#fecaca' : 'transparent',
+                      color: '#ef4444',
+                      fontSize: '14px',
+                      fontWeight: '500',
+                      cursor: isDeleting ? 'not-allowed' : 'pointer',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    {isDeleting ? (
+                      <Loader2 style={{ width: '16px', height: '16px', animation: 'spin 1s linear infinite' }} />
+                    ) : (
+                      <Trash2 style={{ width: '16px', height: '16px' }} />
+                    )}
+                    {isDeleting ? 'Deleting...' : 'Delete Scheme'}
                   </button>
                   <button
                     onClick={() => setShowDetailsModal(false)}

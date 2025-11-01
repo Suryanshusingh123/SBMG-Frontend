@@ -3,11 +3,12 @@ import { useAuth } from './context/AuthContext';
 import { LocationProvider } from './context/LocationContext';
 import Login from './pages/Login';
 import UnifiedDashboard from './components/dashboards/UnifiedDashboard';
+import { ROLES } from './utils/roleConfig';
 
 import './App.css';
 
-const ProtectedRoute = ({ children }) => {
-  const { user, loading } = useAuth();
+const ProtectedRoute = ({ children, allowedRoles }) => {
+  const { user, role, loading } = useAuth();
   
   if (loading) {
     return (
@@ -20,7 +21,15 @@ const ProtectedRoute = ({ children }) => {
     );
   }
   
-  return user ? children : <Navigate to="/login" replace />;
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (allowedRoles && !allowedRoles.includes(role)) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return children;
 };
 
 const PublicRoute = ({ children }) => {
@@ -55,7 +64,7 @@ function App() {
         <Route
           path="/dashboard"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute allowedRoles={[ROLES.SMD]}>
               <LocationProvider>
                 <UnifiedDashboard />
               </LocationProvider>

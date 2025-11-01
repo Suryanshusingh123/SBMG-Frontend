@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Calendar, ChevronDown, X, Upload, Loader2, Edit } from 'lucide-react';
+import { Plus, Calendar, ChevronDown, X, Upload, Loader2, Edit, Trash2 } from 'lucide-react';
 import { eventsAPI } from '../../services/api';
 
 const EventsContent = () => {
@@ -30,6 +30,7 @@ const EventsContent = () => {
         active: true
     });
     const [isUpdating, setIsUpdating] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
 
     // Fetch events data on component mount
     useEffect(() => {
@@ -170,6 +171,27 @@ const EventsContent = () => {
             active: event.active !== undefined ? event.active : true
         });
         setShowEditModal(true);
+    };
+
+    const handleDeleteEvent = async (eventId) => {
+        if (!eventId || isDeleting) return;
+        const confirmDelete = window.confirm('Are you sure you want to delete this event? This action cannot be undone.');
+        if (!confirmDelete) {
+            return;
+        }
+
+        try {
+            setIsDeleting(true);
+            await eventsAPI.deleteEvent(eventId);
+            setShowDetailsModal(false);
+            setSelectedEvent(null);
+            await fetchEvents();
+        } catch (error) {
+            console.error('Error deleting event:', error);
+            alert('Failed to delete event. Please try again.');
+        } finally {
+            setIsDeleting(false);
+        }
     };
 
     // Handle event update
@@ -927,6 +949,31 @@ const EventsContent = () => {
                                     >
                                         <Edit style={{ width: '16px', height: '16px' }} />
                                         Edit Event
+                                    </button>
+                                    <button
+                                        onClick={() => handleDeleteEvent(selectedEvent?.id)}
+                                        disabled={isDeleting}
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '6px',
+                                            padding: '6px 12px',
+                                            border: '1px solid #ef4444',
+                                            borderRadius: '6px',
+                                            backgroundColor: isDeleting ? '#fecaca' : 'transparent',
+                                            color: '#ef4444',
+                                            fontSize: '14px',
+                                            fontWeight: '500',
+                                            cursor: isDeleting ? 'not-allowed' : 'pointer',
+                                            transition: 'all 0.2s'
+                                        }}
+                                    >
+                                        {isDeleting ? (
+                                            <Loader2 style={{ width: '16px', height: '16px', animation: 'spin 1s linear infinite' }} />
+                                        ) : (
+                                            <Trash2 style={{ width: '16px', height: '16px' }} />
+                                        )}
+                                        {isDeleting ? 'Deleting...' : 'Delete Event'}
                                     </button>
                                     <button
                                         onClick={() => setShowDetailsModal(false)}
