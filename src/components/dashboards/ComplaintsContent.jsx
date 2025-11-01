@@ -3,29 +3,53 @@ import { MapPin, ChevronDown, ChevronRight, Calendar, List, Info, Search, Filter
 import Chart from 'react-apexcharts';
 import apiClient from '../../services/api';
 import LocationDisplay from '../common/LocationDisplay';
+import { useLocation } from '../../context/LocationContext';
 
 const ComplaintsContent = () => {
-  // Local location state (independent from dashboard)
-  const [activeScope, setActiveScope] = useState('State');
-  const [selectedLocation, setSelectedLocation] = useState('Rajasthan');
-  const [selectedLocationId, setSelectedLocationId] = useState(null);
-  const [selectedDistrictId, setSelectedDistrictId] = useState(null);
-  const [selectedBlockId, setSelectedBlockId] = useState(null);
-  const [selectedGPId, setSelectedGPId] = useState(null);
-  const [dropdownLevel, setDropdownLevel] = useState('districts');
-  const [selectedDistrictForHierarchy, setSelectedDistrictForHierarchy] = useState(null);
-  const [selectedBlockForHierarchy, setSelectedBlockForHierarchy] = useState(null);
-  
-  // Helper functions for location management (moved from context)
-  const trackTabChange = (scope) => {
+  // Shared location state via context
+  const {
+    activeScope,
+    selectedLocation,
+    selectedLocationId,
+    selectedDistrictId,
+    selectedBlockId,
+    selectedGPId,
+    dropdownLevel,
+    selectedDistrictForHierarchy,
+    selectedBlockForHierarchy,
+    setActiveScope,
+    setSelectedLocation,
+    setSelectedLocationId,
+    setSelectedDistrictId,
+    setSelectedBlockId,
+    setSelectedGPId,
+    setDropdownLevel,
+    setSelectedDistrictForHierarchy,
+    setSelectedBlockForHierarchy,
+    updateLocationSelection: contextUpdateLocationSelection,
+    trackTabChange: contextTrackTabChange,
+    trackDropdownChange: contextTrackDropdownChange,
+    getCurrentLocationInfo: contextGetCurrentLocationInfo
+  } = useLocation();
+
+  const trackTabChange = useCallback((scope) => {
     console.log('Tab changed to:', scope);
-  };
+    if (typeof contextTrackTabChange === 'function') {
+      contextTrackTabChange(scope);
+    }
+  }, [contextTrackTabChange]);
   
-  const trackDropdownChange = (location) => {
+  const trackDropdownChange = useCallback((location, locationId, districtId, blockId, gpId) => {
     console.log('Dropdown changed to:', location);
-  };
+    if (typeof contextTrackDropdownChange === 'function') {
+      contextTrackDropdownChange(location, locationId, districtId, blockId, gpId);
+    }
+  }, [contextTrackDropdownChange]);
   
-  const getCurrentLocationInfo = () => {
+  const getCurrentLocationInfo = useCallback(() => {
+    if (typeof contextGetCurrentLocationInfo === 'function') {
+      return contextGetCurrentLocationInfo();
+    }
     return {
       scope: activeScope,
       location: selectedLocation,
@@ -33,18 +57,14 @@ const ComplaintsContent = () => {
       blockId: selectedBlockId,
       gpId: selectedGPId
     };
-  };
+  }, [contextGetCurrentLocationInfo, activeScope, selectedLocation, selectedDistrictId, selectedBlockId, selectedGPId]);
   
-  const updateLocationSelection = (scope, location, locationId, districtId, blockId, gpId, changeType) => {
+  const updateLocationSelection = useCallback((scope, location, locationId, districtId, blockId, gpId, changeType) => {
     console.log('🔄 updateLocationSelection called:', { scope, location, locationId, districtId, blockId, gpId, changeType });
-    setActiveScope(scope);
-    setSelectedLocation(location);
-    setSelectedLocationId(locationId);
-    setSelectedDistrictId(districtId);
-    setSelectedBlockId(blockId);
-    setSelectedGPId(gpId);
-    console.log('✅ Location state updated');
-  };
+    if (typeof contextUpdateLocationSelection === 'function') {
+      contextUpdateLocationSelection(scope, location, locationId, districtId, blockId, gpId, changeType);
+    }
+  }, [contextUpdateLocationSelection]);
 
   // Local state for UI controls
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);

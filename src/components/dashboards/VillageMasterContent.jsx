@@ -2,21 +2,37 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { MapPin, ChevronDown, ChevronRight, Calendar, List, Info, Search, Filter, Download, Eye, Edit, Trash2, CheckCircle, XCircle, Clock, Users, UserCheck, UserX, DollarSign, Target, TrendingUp, Database, BarChart3, ArrowUpDown } from 'lucide-react';
 import Chart from 'react-apexcharts';
 import apiClient from '../../services/api';
+import { useLocation } from '../../context/LocationContext';
 
 const VillageMasterContent = () => {
     // Refs to prevent duplicate API calls
     const hasFetchedInitialData = useRef(false);
 
-    // Location state management
-    const [activeScope, setActiveScope] = useState('State');
-    const [selectedLocation, setSelectedLocation] = useState('Rajasthan');
-    const [selectedLocationId, setSelectedLocationId] = useState(null);
-    const [selectedDistrictId, setSelectedDistrictId] = useState(null);
-    const [selectedBlockId, setSelectedBlockId] = useState(null);
-    const [selectedGPId, setSelectedGPId] = useState(null);
-    const [dropdownLevel, setDropdownLevel] = useState('districts');
-    const [selectedDistrictForHierarchy, setSelectedDistrictForHierarchy] = useState(null);
-    const [selectedBlockForHierarchy, setSelectedBlockForHierarchy] = useState(null);
+    // Location state management via shared context
+    const {
+        activeScope,
+        selectedLocation,
+        selectedLocationId,
+        selectedDistrictId,
+        selectedBlockId,
+        selectedGPId,
+        dropdownLevel,
+        selectedDistrictForHierarchy,
+        selectedBlockForHierarchy,
+        setActiveScope,
+        setSelectedLocation,
+        setSelectedLocationId,
+        setSelectedDistrictId,
+        setSelectedBlockId,
+        setSelectedGPId,
+        setDropdownLevel,
+        setSelectedDistrictForHierarchy,
+        setSelectedBlockForHierarchy,
+        updateLocationSelection: contextUpdateLocationSelection,
+        trackTabChange: contextTrackTabChange,
+        trackDropdownChange: contextTrackDropdownChange,
+        getCurrentLocationInfo: contextGetCurrentLocationInfo
+    } = useLocation();
     
     // UI controls state
     const [showLocationDropdown, setShowLocationDropdown] = useState(false);
@@ -95,24 +111,26 @@ const VillageMasterContent = () => {
     ];
 
     // Helper functions for location management
-    const trackTabChange = (scope) => {
+    const trackTabChange = useCallback((scope) => {
         console.log('Tab changed to:', scope);
-    };
-    
-    const trackDropdownChange = (location) => {
+        if (typeof contextTrackTabChange === 'function') {
+            contextTrackTabChange(scope);
+        }
+    }, [contextTrackTabChange]);
+
+    const trackDropdownChange = useCallback((location, locationId, districtId, blockId, gpId) => {
         console.log('Dropdown changed to:', location);
-    };
-    
-    const updateLocationSelection = (scope, location, locationId, districtId, blockId, gpId, changeType) => {
+        if (typeof contextTrackDropdownChange === 'function') {
+            contextTrackDropdownChange(location, locationId, districtId, blockId, gpId);
+        }
+    }, [contextTrackDropdownChange]);
+
+    const updateLocationSelection = useCallback((scope, location, locationId, districtId, blockId, gpId, changeType) => {
         console.log('🔄 updateLocationSelection called:', { scope, location, locationId, districtId, blockId, gpId, changeType });
-        setActiveScope(scope);
-        setSelectedLocation(location);
-        setSelectedLocationId(locationId);
-        setSelectedDistrictId(districtId);
-        setSelectedBlockId(blockId);
-        setSelectedGPId(gpId);
-        console.log('✅ Location state updated');
-    };
+        if (typeof contextUpdateLocationSelection === 'function') {
+            contextUpdateLocationSelection(scope, location, locationId, districtId, blockId, gpId, changeType);
+        }
+    }, [contextUpdateLocationSelection]);
 
     // Fetch districts from API
     const fetchDistricts = async () => {

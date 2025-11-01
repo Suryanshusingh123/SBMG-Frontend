@@ -5,22 +5,38 @@ import number1 from '../../assets/images/number1.png';
 import number2 from '../../assets/images/nnumber2.png';
 import number3 from '../../assets/images/number3.png';
 import apiClient from '../../services/api';
+import { useLocation } from '../../context/LocationContext';
 
 
 const InspectionContent = () => {
   // Refs to prevent duplicate API calls
   const hasFetchedInitialData = useRef(false);
 
-  // Location state management
-  const [activeScope, setActiveScope] = useState('State');
-  const [selectedLocation, setSelectedLocation] = useState('Rajasthan');
-  const [selectedLocationId, setSelectedLocationId] = useState(null);
-  const [selectedDistrictId, setSelectedDistrictId] = useState(null);
-  const [selectedBlockId, setSelectedBlockId] = useState(null);
-  const [selectedGPId, setSelectedGPId] = useState(null);
-  const [dropdownLevel, setDropdownLevel] = useState('districts');
-  const [selectedDistrictForHierarchy, setSelectedDistrictForHierarchy] = useState(null);
-  const [selectedBlockForHierarchy, setSelectedBlockForHierarchy] = useState(null);
+  // Location state management via shared context
+  const {
+    activeScope,
+    selectedLocation,
+    selectedLocationId,
+    selectedDistrictId,
+    selectedBlockId,
+    selectedGPId,
+    dropdownLevel,
+    selectedDistrictForHierarchy,
+    selectedBlockForHierarchy,
+    setActiveScope,
+    setSelectedLocation,
+    setSelectedLocationId,
+    setSelectedDistrictId,
+    setSelectedBlockId,
+    setSelectedGPId,
+    setDropdownLevel,
+    setSelectedDistrictForHierarchy,
+    setSelectedBlockForHierarchy,
+    updateLocationSelection: contextUpdateLocationSelection,
+    trackTabChange: contextTrackTabChange,
+    trackDropdownChange: contextTrackDropdownChange,
+    getCurrentLocationInfo: contextGetCurrentLocationInfo
+  } = useLocation();
   
   // UI controls state
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
