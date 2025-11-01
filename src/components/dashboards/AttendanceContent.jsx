@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { MapPin, ChevronDown, ChevronRight, Calendar, List, Info, Search, Filter, Download, Eye, Edit, Trash2, CheckCircle, XCircle, Clock, Users, UserCheck, UserX, X } from 'lucide-react';
+import { MapPin, ChevronDown, ChevronRight, Calendar, List, Info, Search, Filter, Download, Eye, Edit, Trash2, CheckCircle, XCircle, Clock, Users, UserCheck, UserX } from 'lucide-react';
 import Chart from 'react-apexcharts';
 import apiClient from '../../services/api';
+import SendNoticeModal from './common/SendNoticeModal';
 
 const SegmentedGauge = ({ percentage, label = "Present", absentDays = 0 }) => {
   // Calculate which segments should be filled based on percentage
@@ -175,11 +176,58 @@ const AttendanceContent = () => {
 
   // Send Notice Modal state
   const [showSendNoticeModal, setShowSendNoticeModal] = useState(false);
-  const [noticeForm, setNoticeForm] = useState({
-    subject: '',
-    category: '',
-    details: ''
-  });
+  const [selectedNoticeTarget, setSelectedNoticeTarget] = useState(null);
+
+  const buildNoticeTarget = useCallback((item) => {
+    if (!item) {
+      return null;
+    }
+
+    const target = {
+      name: item.name,
+      type: null,
+      districtId: null,
+      blockId: null,
+      gpId: null,
+    };
+
+    if (activeScope === 'State') {
+      target.type = 'District';
+      target.districtId = item.id ?? null;
+    } else if (activeScope === 'Districts') {
+      target.type = 'Block';
+      target.blockId = item.id ?? null;
+      const matchedBlock = blocks.find((block) => block.id === item.id);
+      target.districtId = matchedBlock?.district_id ?? selectedDistrictId ?? null;
+    } else if (activeScope === 'Blocks' || activeScope === 'GPs') {
+      target.type = 'GP';
+      target.gpId = item.id ?? null;
+      const matchedGP = gramPanchayats.find((gp) => gp.id === item.id);
+      const derivedBlockId = matchedGP?.block_id ?? selectedBlockId ?? null;
+      target.blockId = derivedBlockId;
+      const matchedBlock = blocks.find((block) => block.id === derivedBlockId);
+      target.districtId = matchedBlock?.district_id ?? selectedDistrictId ?? null;
+    } else {
+      target.type = item.type ?? null;
+    }
+
+    return target;
+  }, [activeScope, blocks, gramPanchayats, selectedBlockId, selectedDistrictId]);
+
+  const handleOpenNoticeModal = useCallback((item) => {
+    const target = buildNoticeTarget(item);
+    if (!target) {
+      return;
+    }
+
+    setSelectedNoticeTarget(target);
+    setShowSendNoticeModal(true);
+  }, [buildNoticeTarget]);
+
+  const handleCloseNoticeModal = useCallback(() => {
+    setShowSendNoticeModal(false);
+    setSelectedNoticeTarget(null);
+  }, []);
 
   // Analytics data state
   const [analyticsData, setAnalyticsData] = useState(null);
@@ -215,6 +263,11 @@ const AttendanceContent = () => {
     return today.toISOString().split('T')[0];
   });
   const [isCustomRange, setIsCustomRange] = useState(false);
+  const handleDateKeyDown = (event) => {
+    if (event.key !== 'Tab') {
+      event.preventDefault();
+    }
+  };
   
     const scopeButtons = ['State', 'Districts', 'Blocks', 'GPs'];
     const performanceButtons = ['Time', 'Location'];
@@ -2166,6 +2219,7 @@ const AttendanceContent = () => {
                           <input
                             type="date"
                             value={startDate || ''}
+                            onKeyDown={handleDateKeyDown}
                             onChange={(e) => setStartDate(e.target.value)}
                             style={{
                               padding: '8px 12px',
@@ -2188,6 +2242,7 @@ const AttendanceContent = () => {
                           <input
                             type="date"
                             value={endDate || ''}
+                            onKeyDown={handleDateKeyDown}
                             onChange={(e) => setEndDate(e.target.value)}
                             style={{
                               padding: '8px 12px',
@@ -3176,6 +3231,7 @@ const AttendanceContent = () => {
                          <input
                            type="date"
                            value={historyStartDate || ''}
+                          onKeyDown={handleDateKeyDown}
                            onChange={(e) => setHistoryStartDate(e.target.value)}
                            style={{
                              padding: '4px 8px',
@@ -3189,6 +3245,7 @@ const AttendanceContent = () => {
                          <input
                            type="date"
                            value={historyEndDate || ''}
+                          onKeyDown={handleDateKeyDown}
                            onChange={(e) => setHistoryEndDate(e.target.value)}
                            style={{
                              padding: '4px 8px',
@@ -3393,7 +3450,7 @@ const AttendanceContent = () => {
                         textAlign: 'right'
                       }}>
                         <button 
-                          onClick={() => setShowSendNoticeModal(true)}
+                          onClick={() => handleOpenNoticeModal(item)}
                           style={{
                           padding: '6px 12px',
                           backgroundColor: 'transparent',
@@ -3414,195 +3471,11 @@ const AttendanceContent = () => {
           </div>
         </div>
 
-      {/* Send Notice Modal */}
-      {showSendNoticeModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.5)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000
-        }}
-        onClick={() => setShowSendNoticeModal(false)}
-        >
-          <div style={{
-            backgroundColor: 'white',
-            borderRadius: '12px',
-            width: '600px',
-            maxWidth: '90vw',
-            maxHeight: '90vh',
-            overflow: 'auto'
-          }}
-          onClick={(e) => e.stopPropagation()}
-          >
-            {/* Modal Header */}
-            <div style={{
-              padding: '24px',
-              borderBottom: '1px solid #e5e7eb',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between'
-            }}>
-              <h2 style={{
-                fontSize: '20px',
-                fontWeight: '600',
-                color: '#111827',
-                margin: 0
-              }}>
-                Notice - Location
-              </h2>
-              <button
-                onClick={() => setShowSendNoticeModal(false)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  padding: '4px'
-                }}
-              >
-                <X style={{ width: '24px', height: '24px', color: '#6b7280' }} />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div style={{ padding: '24px' }}>
-              {/* Subject Field */}
-              <div style={{ marginBottom: '24px' }}>
-                <label style={{
-                  display: 'block',
-                  fontSize: '14px',
-                  fontWeight: '500',
-                  color: '#374151',
-                  marginBottom: '8px'
-                }}>
-                  Subject
-                </label>
-                <input
-                  type="text"
-                  value={noticeForm.subject}
-                  onChange={(e) => setNoticeForm({ ...noticeForm, subject: e.target.value })}
-                  placeholder="Enter scheme"
-                  style={{
-                    width: '100%',
-                    padding: '12px',
-                    border: '1px solid #d1d5db',
-                    borderRadius: '8px',
-                    fontSize: '14px',
-                    outline: 'none'
-                  }}
-                />
-              </div>
-
-              {/* Category Field */}
-              <div style={{ marginBottom: '24px' }}>
-                <label style={{
-                  display: 'block',
-                  fontSize: '14px',
-                  fontWeight: '500',
-                  color: '#374151',
-                  marginBottom: '8px'
-                }}>
-                  Category
-                </label>
-                <input
-                  type="text"
-                  value={noticeForm.category}
-                  onChange={(e) => setNoticeForm({ ...noticeForm, category: e.target.value })}
-                  placeholder="Select"
-                  style={{
-                    width: '100%',
-                    padding: '12px',
-                    border: '1px solid #d1d5db',
-                    borderRadius: '8px',
-                    fontSize: '14px',
-                    outline: 'none'
-                  }}
-                />
-              </div>
-
-              {/* Details Field */}
-              <div style={{ marginBottom: '24px' }}>
-                <label style={{
-                  display: 'block',
-                  fontSize: '14px',
-                  fontWeight: '500',
-                  color: '#374151',
-                  marginBottom: '8px'
-                }}>
-                  Details
-                </label>
-                <textarea
-                  value={noticeForm.details}
-                  onChange={(e) => setNoticeForm({ ...noticeForm, details: e.target.value })}
-                  placeholder="Details"
-                  rows={6}
-                  style={{
-                    width: '100%',
-                    padding: '12px',
-                    border: '1px solid #d1d5db',
-                    borderRadius: '8px',
-                    fontSize: '14px',
-                    outline: 'none',
-                    resize: 'vertical',
-                    fontFamily: 'inherit'
-                  }}
-                />
-              </div>
-            </div>
-
-            {/* Modal Footer */}
-            <div style={{
-              padding: '24px',
-              borderTop: '1px solid #e5e7eb',
-              display: 'flex',
-              justifyContent: 'flex-end',
-              gap: '12px'
-            }}>
-              <button
-                onClick={() => setShowSendNoticeModal(false)}
-                style={{
-                  padding: '10px 20px',
-                  backgroundColor: '#f3f4f6',
-                  color: '#374151',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontSize: '14px',
-                  fontWeight: '500',
-                  cursor: 'pointer'
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  // Handle send logic here
-                  console.log('Sending notice:', noticeForm);
-                  setShowSendNoticeModal(false);
-                  // Reset form
-                  setNoticeForm({ subject: '', category: '', details: '' });
-                }}
-                style={{
-                  padding: '10px 20px',
-                  backgroundColor: '#10b981',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontSize: '14px',
-                  fontWeight: '500',
-                  cursor: 'pointer'
-                }}
-              >
-                Send
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <SendNoticeModal
+        isOpen={showSendNoticeModal}
+        onClose={handleCloseNoticeModal}
+        target={selectedNoticeTarget}
+      />
     </div>
   );
 };

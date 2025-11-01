@@ -31,6 +31,11 @@ const EventsContent = () => {
     });
     const [isUpdating, setIsUpdating] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
+    const handleDateKeyDown = (event) => {
+        if (event.key !== 'Tab') {
+            event.preventDefault();
+        }
+    };
 
     // Fetch events data on component mount
     useEffect(() => {
@@ -763,6 +768,7 @@ const EventsContent = () => {
                                                     type="date"
                                                     placeholder="From"
                                                     value={formData.fromDate || ''}
+                                                    onKeyDown={handleDateKeyDown}
                                                     onChange={(e) => setFormData({ ...formData, fromDate: e.target.value })}
                                                     style={{
                                                         width: '100%',
@@ -792,6 +798,7 @@ const EventsContent = () => {
                                                     type="date"
                                                     placeholder="To"
                                                     value={formData.toDate || ''}
+                                                    onKeyDown={handleDateKeyDown}
                                                     onChange={(e) => setFormData({ ...formData, toDate: e.target.value })}
                                                     style={{
                                                         width: '100%',

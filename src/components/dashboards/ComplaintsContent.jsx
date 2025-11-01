@@ -88,6 +88,11 @@ const ComplaintsContent = () => {
     return today.toISOString().split('T')[0];
   });
   const [isCustomRange, setIsCustomRange] = useState(false);
+  const handleDateKeyDown = (event) => {
+    if (event.key !== 'Tab') {
+      event.preventDefault();
+    }
+  };
 
   const scopeButtons = ['State', 'Districts', 'Blocks', 'GPs'];
 
@@ -1656,6 +1661,7 @@ const ComplaintsContent = () => {
                           <input
                             type="date"
                             value={startDate || ''}
+                          onKeyDown={handleDateKeyDown}
                             onChange={(e) => setStartDate(e.target.value)}
                             style={{
                               padding: '8px 12px',
@@ -1678,6 +1684,7 @@ const ComplaintsContent = () => {
                           <input
                             type="date"
                             value={endDate || ''}
+                          onKeyDown={handleDateKeyDown}
                             onChange={(e) => setEndDate(e.target.value)}
                             style={{
                               padding: '8px 12px',

@@ -126,5 +126,10 @@ export const eventsAPI = {
   },
 };
 
+export const noticesAPI = {
+  getTypes: () => apiClient.get('/notices/types'),
+  createNotice: (payload) => apiClient.post('/notices/', payload),
+};
+
 export default apiClient;
 

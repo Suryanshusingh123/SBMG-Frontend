@@ -210,7 +210,10 @@ const UnifiedDashboard = () => {
         flexDirection: 'column',
         overflow: 'auto'
       }}>
-        <Header onMenuClick={() => setIsSidebarOpen(prev => !prev)} />
+        <Header
+          onMenuClick={() => setIsSidebarOpen(prev => !prev)}
+          onNotificationsClick={() => setActiveItem('Notices')}
+        />
         {renderContent()}
       </div>
     </div>

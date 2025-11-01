@@ -1,7 +1,7 @@
 import React from 'react';
 import { Search, Bell, ChevronDown, Menu } from 'lucide-react';
 
-const Header = ({ onMenuClick }) => {
+const Header = ({ onMenuClick, onNotificationsClick }) => {
   return (
     <header style={{
       backgroundColor: 'white',
@@ -72,14 +72,34 @@ const Header = ({ onMenuClick }) => {
           borderRadius: '20px',
           border: '1px solid #e5e7eb'
         }}>
-          <button style={{
-            padding: '6px',
-            backgroundColor: 'transparent',
-            border: 'none',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            position: 'relative'
-          }}>
+          <button
+            style={{
+              padding: '6px',
+              backgroundColor: 'transparent',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              position: 'relative',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+            aria-label="Open notices"
+            onClick={() => {
+              if (typeof onNotificationsClick === 'function') {
+                onNotificationsClick();
+              } else {
+                try {
+                  const target = document.querySelector('[data-dashboard-section="notices"]');
+                  if (target) {
+                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }
+                } catch (error) {
+                  console.error('Failed to focus notices section:', error);
+                }
+              }
+            }}
+          >
             <Bell style={{width: '18px', height: '18px', color: '#6b7280'}} />
           </button>
         </div>
